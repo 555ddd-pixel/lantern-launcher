@@ -220,6 +220,17 @@ p { margin: 0; }
 .search input { border: 0; outline: 0; background: none; width: 100%; color: var(--ink); }
 .search:focus-within { border-color: #dcc9b0; box-shadow: 0 0 0 3px rgba(217, 122, 41, .1); }
 
+.toolbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mini-select {
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  border-radius: 11px; padding: 8px 10px; font-size: 12.5px; font-family: inherit;
+  cursor: pointer; height: 38px;
+}
+.mini-select:focus { outline: none; border-color: #dcc9b0; box-shadow: 0 0 0 3px rgba(217, 122, 41, .1); }
+.probe-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.probe-row .ok { color: var(--ok); }
+.probe-row .err { color: var(--err); }
+
 .version-list {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   overflow: hidden;

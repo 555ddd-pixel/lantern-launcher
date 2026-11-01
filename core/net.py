@@ -37,6 +37,41 @@ _ssl_ctx = ssl.create_default_context()
 
 _no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
+# 用户自填的加速代理（Clash / v2rayN 之类），只作用于整合包相关请求，
+# 不去动 Mojang / BMCLAPI / 本机地址，免得把本来通的线路也绕坏。
+_proxy_url = ""
+_proxy_opener = None
+_proxy_lock = threading.Lock()
+
+
+def set_proxy(url: str) -> None:
+    """设置加速代理，如 http://127.0.0.1:7890；空字符串 = 直连（默认）。"""
+    global _proxy_url, _proxy_opener
+    url = (url or "").strip()
+    with _proxy_lock:
+        if url == _proxy_url:
+            return
+        _proxy_url = url
+        _proxy_opener = None
+
+
+def proxy_url() -> str:
+    with _proxy_lock:
+        return _proxy_url
+
+
+def _use_proxy_opener():
+    """有配置代理时才返回专用 opener，否则返回 None（走系统默认逻辑）。"""
+    with _proxy_lock:
+        if not _proxy_url:
+            return None
+        global _proxy_opener
+        if _proxy_opener is None:
+            _proxy_opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({"http": _proxy_url, "https": _proxy_url}))
+        return _proxy_opener
+
+
 
 def open_local(url: str, data: Optional[bytes] = None,
                headers: Optional[dict] = None, timeout: float = 5.0):
@@ -96,7 +131,8 @@ def resolve_mirror(mirror: str) -> str:
     return probe_mirror() if mirror == "auto" else mirror
 
 
-def _open(url: str, timeout: float = 30.0, headers: Optional[dict] = None, retries: int = 3):
+def _open(url: str, timeout: float = 30.0, headers: Optional[dict] = None,
+          retries: int = 3, use_proxy: bool = False):
     last = None
     for attempt in range(retries):
         try:
@@ -104,6 +140,9 @@ def _open(url: str, timeout: float = 30.0, headers: Optional[dict] = None, retri
             if headers:
                 h.update(headers)
             req = urllib.request.Request(url, headers=h)
+            opener = _use_proxy_opener() if use_proxy else None
+            if opener is not None:
+                return opener.open(req, timeout=timeout)
             return urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx)
         except urllib.error.HTTPError as e:
             last = e
@@ -115,13 +154,15 @@ def _open(url: str, timeout: float = 30.0, headers: Optional[dict] = None, retri
     raise NetworkError(f"请求失败：{url}（{last}）")
 
 
-def get_bytes(url: str, timeout: float = 30.0, retries: int = 3) -> bytes:
-    with _open(url, timeout=timeout, retries=retries) as r:
+def get_bytes(url: str, timeout: float = 30.0, retries: int = 3,
+              use_proxy: bool = False) -> bytes:
+    with _open(url, timeout=timeout, retries=retries, use_proxy=use_proxy) as r:
         return r.read()
 
 
-def get_json(url: str, timeout: float = 30.0, retries: int = 3) -> dict:
-    raw = get_bytes(url, timeout=timeout, retries=retries)
+def get_json(url: str, timeout: float = 30.0, retries: int = 3,
+             use_proxy: bool = False) -> dict:
+    raw = get_bytes(url, timeout=timeout, retries=retries, use_proxy=use_proxy)
     return json.loads(raw.decode("utf-8"))
 
 
@@ -144,6 +185,7 @@ def download_file(
     progress: Optional[Callable[[int], None]] = None,
     retries: int = 3,
     quick: bool = False,
+    use_proxy: bool = False,
 ) -> int:
     """下载到 dest（原子写入）。若已存在且校验通过则直接跳过。
 
@@ -179,7 +221,8 @@ def download_file(
     for attempt in range(retries + 1):
         try:
             done = 0
-            with _open(current, timeout=60.0, retries=1) as r, open(tmp, "wb") as f:
+            with _open(current, timeout=60.0, retries=1,
+                       use_proxy=use_proxy) as r, open(tmp, "wb") as f:
                 while True:
                     chunk = r.read(_CHUNK)
                     if not chunk:

@@ -30,9 +30,21 @@ from . import net
 from .config import CACHE_DIR, config
 from .meta import version_dir
 
-API = "https://api.modrinth.com/v2"
+API_OFFICIAL = "https://api.modrinth.com/v2"
+API_MIRROR = "https://mod.mcimirror.top/modrinth/v2"   # MCIM：大陆公益镜像
+CDN_OFFICIAL = "https://cdn.modrinth.com"
+CDN_MIRROR = "https://mod.mcimirror.top"               # 同一路径前缀，换域名即可
 INSTANCE_FILE = ".lantern-instance.json"
 PACK_FILE = ".lantern-pack.json"
+
+SOURCE_LABEL = {"auto": "自动", "official": "官方", "mirror": "国内镜像"}
+
+# auto 模式下第一个入口最多等这么久，超时就换另一个（官方线路常卡在手握手上）
+AUTO_FIRST_TIMEOUT = 6.0
+
+# 上次连通的 API 入口：auto 模式下优先复用，避免每次都踩一遍慢的那个
+_live_api = ""
+_probe_started = False
 
 LOADER_LABEL = {"fabric": "Fabric", "quilt": "Quilt", "forge": "Forge",
                 "neoforge": "NeoForge", "": "原版", "vanilla": "原版"}
@@ -81,10 +93,91 @@ def _q(params: dict) -> str:
     return urllib.parse.urlencode(clean, doseq=True)
 
 
+def source_mode() -> str:
+    mode = str(config["pack_source"] or "auto").lower()
+    return mode if mode in ("auto", "official", "mirror") else "auto"
+
+
+def api_bases() -> list[str]:
+    """按偏好排好的 API 入口列表（auto 会依次尝试）。"""
+    global _live_api
+    mode = source_mode()
+    if mode == "official":
+        return [API_OFFICIAL]
+    if mode == "mirror":
+        return [API_MIRROR]
+    order = [API_OFFICIAL, API_MIRROR]
+    if _live_api in order:
+        order.remove(_live_api)
+        order.insert(0, _live_api)
+    return order
+
+
+def _api_get(path: str, params: Optional[dict] = None, timeout: float = 20.0):
+    """带换源的 GET：官方连不上就自动走镜像，成功的入口记下来。"""
+    global _live_api
+    net.set_proxy(str(config["net_proxy"] or ""))
+    bases = api_bases()
+    errors = []
+    for idx, base in enumerate(bases):
+        url = f"{base}{path}"
+        if params:
+            url = f"{url}?{_q(params)}"
+        # auto 模式还没判定过线路时，先试的那个别死等：官方偶尔会卡在手握手上
+        limit = min(timeout, AUTO_FIRST_TIMEOUT) if idx == 0 and len(bases) > 1 else timeout
+        try:
+            data = net.get_json(url, timeout=limit, retries=1, use_proxy=True)
+            if base != _live_api:
+                _live_api = base
+            return data
+        except Exception as e:  # noqa: BLE001 - 换下一个入口
+            errors.append(f"{'镜像' if base == API_MIRROR else '官方'}: {e}")
+    raise RuntimeError("连不上 Modrinth（" + "；".join(errors) + "）。"
+                       "可在「设置 → 整合包网络」里切换到国内镜像或填加速代理。")
+
+
 def _get(url: str, params: Optional[dict] = None, timeout: float = 25.0):
     if params:
         url = f"{url}?{_q(params)}"
     return net.get_json(url, timeout=timeout, retries=2)
+
+
+def to_mirror(url: str) -> str:
+    """cdn.modrinth.com 上的文件换成镜像域名（路径结构相同）。"""
+    for host in (CDN_OFFICIAL, "https://cdn-raw.modrinth.com"):
+        if url.startswith(host):
+            return CDN_MIRROR + url[len(host):]
+    return url
+
+
+def mirror_icon(url: str) -> str:
+    return to_mirror(url) if url else ""
+
+
+def file_candidates(url: str) -> list[str]:
+    """文件下载的候选地址：按当前源排序，失败再换另一个。"""
+    mirror = to_mirror(url)
+    if source_mode() == "mirror":
+        return [mirror] if mirror != url else [url]
+    if mirror == url:
+        return [url]
+    return [url, mirror] if source_mode() == "auto" else [url, mirror]
+
+
+def download(url: str, dest: Path, expected_sha1: Optional[str] = None,
+             expected_size: Optional[int] = None,
+             progress: Optional[Callable[[int], None]] = None) -> int:
+    """下载一个整合包文件：主地址失败自动换另一个源。"""
+    net.set_proxy(str(config["net_proxy"] or ""))
+    last: Optional[Exception] = None
+    for cand in file_candidates(url):
+        try:
+            return net.download_file(cand, dest, expected_sha1=expected_sha1,
+                                     expected_size=expected_size,
+                                     progress=progress, use_proxy=True)
+        except Exception as e:  # noqa: BLE001
+            last = e
+    raise RuntimeError(f"下载失败：{dest.name}（{last}）")
 
 
 def instances_dir() -> Path:
@@ -122,6 +215,55 @@ def _slug(text: str) -> str:
     return s or "modpack"
 
 
+def probe_sources(timeout: float = 8.0) -> dict:
+    """测一下官方 / 镜像哪个能连、多快，给设置页的「测试」用（两路并发，最多等一个超时）。"""
+    global _live_api
+    net.set_proxy(str(config["net_proxy"] or ""))
+    results: dict = {}
+    lock = threading.Lock()
+
+    def one(name: str, base: str) -> None:
+        start = time.time()
+        try:
+            net.get_json(f"{base}/search?query=fabric&limit=1",
+                         timeout=timeout, retries=1, use_proxy=True)
+            item = {"ok": True, "ms": int((time.time() - start) * 1000)}
+        except Exception as e:  # noqa: BLE001
+            item = {"ok": False, "ms": 0, "error": str(e)[:160]}
+        with lock:
+            results[name] = item
+
+    threads = [threading.Thread(target=one, args=(n, b), daemon=True)
+               for n, b in (("official", API_OFFICIAL), ("mirror", API_MIRROR))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout + 2)
+    with lock:
+        pairs = sorted((v["ms"], k) for k, v in results.items() if v.get("ok"))
+    best = pairs[0][1] if pairs else ""
+    if best and source_mode() == "auto":
+        _live_api = API_MIRROR if best == "mirror" else API_OFFICIAL
+    return {"source": source_mode(), "source_label": SOURCE_LABEL[source_mode()],
+            "proxy": net.proxy_url(), "results": results, "best": best}
+
+
+def start_probe() -> None:
+    """启动时后台探一次线路，用户点开整合包页时就不用再等超时了。"""
+    global _probe_started
+    if _probe_started:
+        return
+    _probe_started = True
+
+    def run() -> None:
+        try:
+            probe_sources(timeout=6.0)
+        except Exception:  # noqa: BLE001 - 探测失败不影响功能
+            pass
+
+    threading.Thread(target=run, daemon=True, name="lantern-pack-probe").start()
+
+
 # ---------------------------------------------------------------- Modrinth
 
 
@@ -133,7 +275,7 @@ def search(query: str = "", loader: str = "", mc: str = "",
         facets.append([f"categories:{loader.lower()}"])
     if mc:
         facets.append([f"versions:{mc}"])
-    data = _get(f"{API}/search", {
+    data = _api_get("/search", {
         "query": query, "limit": int(limit), "offset": int(offset), "index": index,
         "facets": json.dumps(facets, separators=(",", ":")),
     })
@@ -146,6 +288,7 @@ def search(query: str = "", loader: str = "", mc: str = "",
             "description": h.get("description") or "",
             "author": h.get("author") or "",
             "icon": h.get("icon_url") or "",
+            "icon_mirror": mirror_icon(h.get("icon_url") or ""),
             "downloads": h.get("downloads") or 0,
             "follows": h.get("follows") or 0,
             "categories": [c for c in (h.get("display_categories") or h.get("categories") or [])][:6],
@@ -158,7 +301,7 @@ def search(query: str = "", loader: str = "", mc: str = "",
 
 
 def project_detail(project: str) -> dict:
-    return _get(f"{API}/project/{project}")
+    return _api_get(f"/project/{project}")
 
 
 def project_versions(project: str, mc: str = "", loader: str = "") -> list[dict]:
@@ -167,7 +310,7 @@ def project_versions(project: str, mc: str = "", loader: str = "") -> list[dict]
         params["game_versions"] = json.dumps([mc])
     if loader:
         params["loaders"] = json.dumps([loader.lower()])
-    rows = _get(f"{API}/project/{project}/version", params)
+    rows = _api_get(f"/project/{project}/version", params)
     out = []
     for v in rows or []:
         files = v.get("files") or []
@@ -532,8 +675,8 @@ def _download_files(files: list[PackFile], target: Path,
             raise Cancelled()
         dest = target / item.path
         meter.set_current(item.path)
-        net.download_file(item.url, dest, expected_sha1=item.sha1 or None,
-                          expected_size=item.size or None, progress=meter.add_bytes)
+        download(item.url, dest, expected_sha1=item.sha1 or None,
+                 expected_size=item.size or None, progress=meter.add_bytes)
         meter.file_done()
 
     workers = max(4, min(16, int(config["concurrent"] or 8)))
@@ -632,7 +775,7 @@ def install_from_version(project: str, version_id: str,
                          cancel: Optional[threading.Event] = None) -> dict:
     """从 Modrinth 的某个版本一键安装。"""
     log = emit or (lambda *_: None)
-    rows = _get(f"{API}/project/{project}/version")
+    rows = _api_get(f"/project/{project}/version")
     ver = next((v for v in rows if v.get("id") == version_id), None)
     if ver is None:
         raise RuntimeError("找不到该整合包版本（可能已被作者删除）")
@@ -644,9 +787,9 @@ def install_from_version(project: str, version_id: str,
     name = primary.get("filename") or f"{project}.mrpack"
     dest = CACHE_DIR / "modpacks" / name
     log(f"下载整合包文件 {name}（{(primary.get('size') or 0) / 1048576:.1f} MB）…")
-    net.download_file(primary["url"], dest,
-                      expected_sha1=(primary.get("hashes") or {}).get("sha1") or None,
-                      expected_size=primary.get("size") or None)
+    download(primary["url"], dest,
+             expected_sha1=(primary.get("hashes") or {}).get("sha1") or None,
+             expected_size=primary.get("size") or None)
     info = read_zip_info(dest)
     info.project = project
     if not info.name:

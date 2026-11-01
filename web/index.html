@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lantern Launcher · Minecraft 启动器</title>
+<title>老张的minecraft启动器</title>
 <link rel="stylesheet" href="/styles.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏮</text></svg>">
 </head>
@@ -17,8 +17,8 @@
         </svg>
       </div>
       <div class="brand-text">
-        <strong>Lantern</strong>
-        <span>Minecraft Launcher</span>
+        <strong>老张的</strong>
+        <span>minecraft 启动器</span>
       </div>
     </div>
 
@@ -171,7 +171,7 @@
       <div class="page-head">
         <div>
           <h1>整合包</h1>
-          <p class="muted">实时搜索网络上的整合包，一键下载安装。也可以把 <span class="mono">.mrpack</span> / <span class="mono">.zip</span> 直接拖进窗口。</p>
+          <p class="muted">实时搜索网络上的整合包，一键下载安装。也可以把 <span class="mono">.mrpack</span> / <span class="mono">.zip</span> 直接拖进窗口。国内网络搜不出来时，把右上角切成「国内镜像」。</p>
         </div>
         <button class="btn btn-ghost" id="packRefresh">刷新</button>
       </div>
@@ -184,9 +184,16 @@
           <button class="tab" data-loader="quilt">Quilt</button>
           <button class="tab" data-loader="neoforge">NeoForge</button>
         </div>
-        <div class="search">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-          <input id="packSearch" placeholder="搜索整合包，例如 Fabulously Optimized / 机械动力" autocomplete="off">
+        <div class="toolbar-right">
+          <div class="search">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input id="packSearch" placeholder="搜索整合包，例如 Fabulously Optimized / 机械动力" autocomplete="off">
+          </div>
+          <select class="mini-select" id="packSource" title="整合包数据源">
+            <option value="auto">源：自动</option>
+            <option value="official">源：官方</option>
+            <option value="mirror">源：国内镜像</option>
+          </select>
         </div>
       </div>
 
@@ -326,6 +333,27 @@
             </label>
           </div>
           <div class="java-box" id="javaBox"></div>
+        </div>
+
+        <div class="panel">
+          <h2>整合包网络</h2>
+          <p class="muted small">Modrinth 官方接口在大陆经常超时。可以切到国内镜像（MCIM 公益镜像），或填本机加速代理让请求走代理软件。</p>
+          <label class="field">
+            <span>整合包下载源</span>
+            <select id="setPackSource">
+              <option value="auto">自动（官方优先，失败自动换镜像）</option>
+              <option value="official">仅官方 api.modrinth.com</option>
+              <option value="mirror">国内镜像 mod.mcimirror.top</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>加速代理（留空 = 直连；只作用于整合包请求）</span>
+            <input id="setNetProxy" type="text" spellcheck="false" placeholder="http://127.0.0.1:7890">
+          </label>
+          <div class="probe-row">
+            <button class="btn btn-ghost btn-mini" id="probeNet">测试连通性</button>
+            <span class="muted small" id="probeResult">点左侧按钮看看哪条线路通</span>
+          </div>
         </div>
 
         <div class="panel">

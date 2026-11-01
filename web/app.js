@@ -1,4 +1,4 @@
-/* Lantern Launcher 前端逻辑：无框架，直接操作 DOM。 */
+/* 老张的minecraft启动器 前端逻辑：无框架，直接操作 DOM。 */
 
 const APP_TITLE = document.title.replace(" · Minecraft 启动器", "");
 
@@ -549,7 +549,7 @@ async function waitForRestart() {
   mask.className = "restart-mask";
   mask.innerHTML = `<div class="restart-box">
       <div class="spinner"></div>
-      <strong>正在更新 Lantern Launcher</strong>
+      <strong>正在更新 老张的minecraft启动器</strong>
       <span class="muted small" id="restartHint">替换程序文件并重启中，界面会自动恢复…</span>
     </div>`;
   document.body.appendChild(mask);
@@ -639,6 +639,9 @@ function fillSettings() {
   $("#setUpdateInterval").value = c.update_interval_min || 30;
   $("#setLiveRefresh").checked = c.live_refresh !== false;
   $("#setCloseToTray").checked = !!c.close_to_tray;
+  $("#setPackSource").value = c.pack_source || "auto";
+  $("#setNetProxy").value = c.net_proxy || "";
+  $("#packSource").value = c.pack_source || "auto";
 }
 
 $("#saveSettings").addEventListener("click", async () => {
@@ -661,6 +664,8 @@ $("#saveSettings").addEventListener("click", async () => {
     update_interval_min: parseInt($("#setUpdateInterval").value, 10) || 30,
     live_refresh: $("#setLiveRefresh").checked,
     close_to_tray: $("#setCloseToTray").checked,
+    pack_source: $("#setPackSource").value,
+    net_proxy: $("#setNetProxy").value.trim(),
   };
   try {
     const { config } = await api("/api/config", { method: "POST", body: JSON.stringify({ config: patch }) });
@@ -671,6 +676,53 @@ $("#saveSettings").addEventListener("click", async () => {
     loadLocal();
     if (patch.update_url !== undefined) api("/api/update/check", { method: "POST", body: "{}" }).catch(() => {});
   } catch (e) { toast(e.message, "err"); }
+});
+
+/* 整合包网络：源切换 + 连通性测试 */
+
+async function setPackSource(value, opts = {}) {
+  try {
+    const { config } = await api("/api/config", { method: "POST", body: JSON.stringify({ config: { pack_source: value } }) });
+    state.config = config;
+    $("#packSource").value = config.pack_source || "auto";
+    $("#setPackSource").value = config.pack_source || "auto";
+    if (!opts.silent) {
+      toast("整合包源：" + ({ auto: "自动", official: "官方", mirror: "国内镜像" }[value] || value), "ok");
+    }
+    packState.loaded = false;
+    searchPacks(true);
+  } catch (e) { toast(e.message, "err"); }
+}
+
+$("#packSource").addEventListener("change", (e) => setPackSource(e.target.value));
+
+$("#probeNet").addEventListener("click", async () => {
+  const btn = $("#probeNet");
+  const out = $("#probeResult");
+  btn.disabled = true;
+  out.className = "muted small";
+  out.textContent = "正在测试…";
+  try {
+    const d = await api("/api/net/probe");
+    const r = d.results || {};
+    const line = (name, label) => {
+      const x = r[name] || {};
+      return x.ok ? `${label} ${x.ms} ms` : `${label} 不通`;
+    };
+    const okCount = ["official", "mirror"].filter((k) => (r[k] || {}).ok).length;
+    out.className = okCount ? "small ok" : "small err";
+    out.textContent = [
+      line("official", "官方"), line("mirror", "镜像"),
+      d.proxy ? `代理 ${d.proxy}` : "未用代理",
+      okCount ? `建议：${d.best === "mirror" ? "国内镜像" : "官方"}`
+              : "两条线路都不通，试试填加速代理",
+    ].join(" · ");
+  } catch (e) {
+    out.className = "small err";
+    out.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 /* ---------------- 更新相关按钮 ---------------- */
@@ -917,7 +969,7 @@ async function searchPacks(reset) {
     packState.loaded = true;
     renderPacks();
   } catch (e) {
-    box.innerHTML = `<div class="empty">搜索失败：${esc(e.message)}<br><span class="small">国内网络访问 Modrinth 可能较慢，稍后重试或设置代理</span></div>`;
+    box.innerHTML = `<div class="empty">搜索失败：${esc(e.message)}<br><span class="small">国内网络连不上 Modrinth？把右上角切成「国内镜像」再试，或在设置里填加速代理。</span></div>`;
   } finally {
     packState.loading = false;
   }
@@ -933,7 +985,7 @@ function renderPacks() {
   box.innerHTML = packState.hits.map((h, i) => `
     <article class="pack-card">
       <div class="pack-top">
-        <div class="pack-icon">${h.icon ? `<img src="${esc(h.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : "📦"}</div>
+        <div class="pack-icon">${h.icon ? `<img src="${esc(h.icon)}" data-alt="${esc(h.icon_mirror || "")}" onerror="if(this.dataset.alt){this.onerror=null;this.src=this.dataset.alt}" alt="" loading="lazy" referrerpolicy="no-referrer">` : "📦"}</div>
         <div class="pack-title">
           <strong title="${esc(h.title)}">${esc(h.title)}</strong>
           <span class="muted small">${esc(h.author || "")}${h.updated ? " · " + esc(h.updated) : ""}</span>

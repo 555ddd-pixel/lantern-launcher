@@ -309,7 +309,7 @@ class DesktopApp:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("退出", lambda *_: self.quit()),
         )
-        icon = pystray.Icon("lantern-launcher", image,
+        icon = pystray.Icon("laozhang-launcher", image,
                             f"{APP_NAME} {VERSION}", menu)
         self.tray = icon
         threading.Thread(target=icon.run, daemon=True, name="lantern-tray").start()

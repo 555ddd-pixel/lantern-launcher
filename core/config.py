@@ -36,6 +36,10 @@ DEFAULTS = {
     "font_anti_aliasing": True,
     "ms_client_id": "",            # 已废弃：正版登录改用内置客户端 ID，不再需要自备 Azure 应用
 
+    # ---------- 整合包网络（大陆访问 Modrinth 容易超时） ----------
+    "pack_source": "auto",         # auto | official | mirror（MCIM 国内镜像）
+    "net_proxy": "",               # 加速代理，如 http://127.0.0.1:7890；留空=直连
+
     # ---------- 桌面窗口 ----------
     "app_window": {"x": -1, "y": -1, "w": 1320, "h": 880, "maximized": False},
     "close_to_tray": False,        # 关窗口时缩到托盘而不是退出

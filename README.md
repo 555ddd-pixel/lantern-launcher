@@ -1,9 +1,12 @@
-# Lantern Launcher 🏮
+# 老张的minecraft启动器 🏮
 
 [![Release](https://img.shields.io/github/v/release/555ddd-pixel/lantern-launcher?label=release)](https://github.com/555ddd-pixel/lantern-launcher/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./README.md)
 
 **下载**：到 [Releases](https://github.com/555ddd-pixel/lantern-launcher/releases/latest) 下载 `LanternLauncher.exe`，双击即用（免安装，Windows 10/11 自带 WebView2）。
+
+> 显示名已改为**老张的minecraft启动器**（窗口标题 / 任务栏 / 托盘 / 界面 / 文件属性）；
+> exe 文件名保留 ASCII 的 `LanternLauncher.exe`，这样老版本客户端的自动更新能原地替换、不会断链。
 
 一个**独立实现**的 Minecraft: Java 版启动器，可以列出并下载 **任意官方版本**（正式版 / 快照 / 远古 Alpha·Beta），下载完整游戏文件并用正确的参数把游戏拉起来。
 
@@ -36,6 +39,7 @@ PCL2（Plain Craft Launcher 2，作者 龙腾猫跃）是我这次调研的参�
 - **登录分支**：登录窗口里先选「离线」或「微软正版」；正版点「开始登录」直接弹出微软官方登录页，登录并同意授权后启动器自动抓取回调、取回正版 ID 完成登录（内置公共客户端，无需自己申请 Azure 应用）
 - **联机**：本机局域网地址一键复制；UPnP 端口映射把「对局域网开放」的端口开到公网；不支持 UPnP / 运营商内网时给出 P2P 组网方案（可一键下载 EasyTier 客户端）
 - **整合包**：实时搜索网络整合包（Modrinth），一键下载 + 装原版 + 装 loader + 铺模组；也支持把 `.mrpack` / CurseForge `.zip` **拖进窗口**自动导入
+- **整合包网络加速**：数据源可切「自动 / 官方 / 国内镜像（MCIM `mod.mcimirror.top`）」，官方超时自动换镜像；图标坏图自动改用镜像；还能填本机加速代理（如 Clash 的 `http://127.0.0.1:7890`），只作用于整合包请求，不影响 Mojang 下载
 - **老版本资源兼容**：自动处理 `virtual` / `map_to_resources` 的 pre-1.6 资源布局
 - **超长 classpath 兜底**：超过 Windows 命令行 32K 上限时切换 Java 9+ 的 `@argfile`
 - **桌面软件形态**：原生应用窗口（WebView2 内核，无地址栏）+ 系统托盘 + 记住窗口大小/位置 + 单实例唤起（第二次双击把窗口切到前台，不开新进程）

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Lantern Launcher 入口。
+"""老张的minecraft启动器 入口。
 
 默认启动为桌面窗口（原生窗口 + 托盘）；也保留了浏览器 / 无界面模式。
 

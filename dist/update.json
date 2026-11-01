@@ -1,13 +1,13 @@
 {
-  "version": "1.5.0",
+  "version": "1.6.0",
   "published": "2026-11-01",
-  "notes": "正版登录改为微软官方授权页：点「开始登录」直接弹出微软登录窗口，登录并同意后自动抓取回调、取回正版 ID 完成登录，不再需要自己填 Azure 客户端 ID；误关窗口或抓取失败时，可粘贴浏览器地址栏链接一键补登录。",
+  "notes": "整合包网络加速：数据源可切「自动 / 官方 / 国内镜像（MCIM mod.mcimirror.top）」，官方超时自动换镜像、坏图改用镜像、可填本机加速代理（只作用于整合包请求）；设置页与整合包页都能一键切换并测试线路。启动器正式改名「老张的minecraft启动器」（窗口标题 / 任务栏 / 托盘 / 界面 / 文件属性；exe 文件名仍为 LanternLauncher.exe，保证老版本自动更新能原地替换）。",
   "min_version": "1.0.0",
   "files": {
     "windows-x64": {
-      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.5.0/LanternLauncher.exe",
-      "size": 20250644,
-      "sha1": "1de5ec62755cc9fcb1ceac4f1af84727fc7b9c1c"
+      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.6.0/LanternLauncher.exe",
+      "size": 20256284,
+      "sha1": "660086b6f03d37d47652cee1ea68ece0077faf66"
     }
   }
 }

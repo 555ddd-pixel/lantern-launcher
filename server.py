@@ -435,6 +435,12 @@ class Handler(BaseHTTPRequestHandler):
                 "required": {v.id: (v.meta.get("javaVersion") or {}).get("majorVersion", 8)
                              for v in list_local_versions()},
             })
+        if path == "/api/net/probe":
+            try:
+                return self._json({"ok": True, **modpack.probe_sources()})
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"测速失败：{e}")
+
         if path == "/api/modpack/search":
             q = (qs.get("q", [""])[0] or "").strip()
             loader = (qs.get("loader", [""])[0] or "").strip()
@@ -689,6 +695,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             patch = body.get("config") or {}
             config.update(patch)
+            from core import net
+            net.set_proxy(str(config["net_proxy"] or ""))
             return self._json({"ok": True, "config": config.data})
 
         if path == "/api/java/download":
@@ -784,6 +792,7 @@ def start(port: int = 8787, open_browser: bool = False) -> tuple:
     config.ensure_dirs()
     updater.start_background(emit=lambda s: task._log("[更新] " + s))
     live.start_background()
+    modpack.start_probe()          # 后台先探一次整合包线路，界面打开就能直连可用的源
     httpd = None
     for p in range(port, port + 20):
         try:

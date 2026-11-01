@@ -25,7 +25,7 @@ from .manifest import get_version_json
 from .meta import (CP_SEP, OS_NAME, expand_args, resolve_libraries, resolve_meta,
                    rules_allow, version_dir)
 
-LAUNCHER_NAME = "LanternLauncher"
+LAUNCHER_NAME = "LaoZhangLauncher"
 LAUNCHER_VERSION = "1.0.0"
 
 

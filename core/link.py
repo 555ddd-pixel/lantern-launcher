@@ -32,7 +32,7 @@ PRIVATE_NETS = (
     ipaddress.IPv4Network("192.168.0.0/16"),
 )
 DEFAULT_PORT = 25565
-DESC = "Lantern Launcher"
+DESC = "老张的minecraft启动器"
 
 
 # ---------------------------------------------------------------- 本机地址
