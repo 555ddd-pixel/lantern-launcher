@@ -8,7 +8,7 @@ CHANNEL = "stable"
 
 # ---------------------------------------------------------------- 发布地址
 # 改这里就能把自动更新指向别的仓库/分支，不用再翻 build.py 和 config.py
-GITHUB_REPO = "wunailaozhang/lantern-launcher"
+GITHUB_REPO = "555ddd-pixel/lantern-launcher"
 REPO_URL = f"https://github.com/{GITHUB_REPO}"
 
 # 更新清单：始终指向「最新 Release」里的 update.json
