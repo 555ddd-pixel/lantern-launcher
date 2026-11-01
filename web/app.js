@@ -18,6 +18,10 @@ const state = {
   update: {},
   liveSeen: 0,
   bannerDismissed: false,
+  currentVersion: "",
+  modsVersion: "",
+  modsArea: "mods",
+  modsData: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -86,6 +90,7 @@ function go(page) {
   if (page === "logs") refreshConsole(true);
   if (page === "settings") loadJava();
   if (page === "modpack") ensurePacks();
+  if (page === "mods") loadMods();
   if (page === "link") loadLink();
 }
 
@@ -236,7 +241,7 @@ function renderVersionList() {
     : `共 ${list.length} 个版本`;
 
   box.querySelectorAll("[data-install]").forEach((b) => {
-    b.addEventListener("click", () => installVersion(b.dataset.install));
+    b.addEventListener("click", () => openInstall(b.dataset.install));
   });
   box.querySelectorAll("[data-play]").forEach((b) => {
     b.addEventListener("click", () => launchVersion(b.dataset.play));
@@ -299,17 +304,395 @@ $("#openGameDir").addEventListener("click", () => api("/api/open", {
   method: "POST", body: JSON.stringify({ target: "game_dir" }),
 }).catch((e) => toast(e.message, "err")));
 
+/* ---------------- 模组 / 光影 ---------------- */
+
+const MOD_AREAS = { mods: "模组", shaderpacks: "光影", resourcepacks: "资源包" };
+const MOD_EMPTY = {
+  mods: "这个版本还没有模组。点右上「导入模组」，或把 .jar 直接拖进窗口。",
+  shaderpacks: "还没有光影包。切到「光影」后导入 .zip（Iris / OptiFine 会读取它）。",
+  resourcepacks: "还没有资源包。切到「资源包」后导入 .zip。",
+};
+
+function modVersion() {
+  return state.modsVersion || state.currentVersion || "";
+}
+
+async function loadMods() {
+  if (!state.local.length) {
+    try { await loadLocal(); } catch (e) { /* 忽略 */ }
+  }
+  const ids = state.local.map((v) => v.id);
+  if (!state.modsVersion || !ids.includes(state.modsVersion)) {
+    state.modsVersion = (state.currentVersion && ids.includes(state.currentVersion))
+      ? state.currentVersion : (ids[0] || "");
+  }
+  const sel = $("#modVersion");
+  sel.innerHTML = ids.length
+    ? state.local.map((v) => `<option value="${esc(v.id)}">${esc(v.id)} · ${esc(v.loader_label || v.loader || "原版")}${v.mods ? " · " + v.mods + " 模组" : ""}</option>`).join("")
+    : '<option value="">还没有安装版本</option>';
+  if (state.modsVersion) sel.value = state.modsVersion;
+  if (!state.modsVersion) {
+    $("#modMeta").hidden = true;
+    $("#modBulk").hidden = true;
+    $("#modList").innerHTML = '<div class="empty">还没有已安装的版本。先去「下载」页装一个，推荐选 Fabric 或 NeoForge。</div>';
+    return;
+  }
+  await refreshMods();
+}
+
+async function refreshMods() {
+  const vid = modVersion();
+  if (!vid) return;
+  $("#modList").innerHTML = '<div class="empty">读取模组列表…</div>';
+  try {
+    const data = await api("/api/content?version=" + encodeURIComponent(vid));
+    state.modsData = data;
+    renderModMeta(data);
+    renderModList(data);
+  } catch (e) {
+    $("#modMeta").hidden = true;
+    $("#modList").innerHTML = `<div class="empty">读取失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderModMeta(d) {
+  const meta = $("#modMeta");
+  meta.hidden = false;
+  const loader = d.loader || "vanilla";
+  const label = d.loader_label || LOADER_LABEL[loader] || loader;
+  meta.innerHTML = `
+    <span class="loader-badge ${loader === "vanilla" ? "plain" : ""}">${esc(label)}</span>
+    <span>${d.isolated ? "独立游戏目录" : "共享游戏目录"}</span>
+    <span class="mono path" title="${esc(d.game_dir)}">${esc(d.game_dir)}</span>
+    ${d.isolated ? "" : '<span class="badge-warn small">未隔离：所有没独立目录的版本共用这里</span>'}
+    <span class="mod-meta-actions">
+      ${d.isolated ? "" : '<button class="btn btn-ghost btn-mini" id="modIsolate">设为独立目录</button>'}
+      <button class="btn btn-ghost btn-mini" id="modOpen">打开目录</button>
+    </span>`;
+  const openBtn = $("#modOpen");
+  if (openBtn) openBtn.addEventListener("click", () => openContentDir(state.modsArea));
+  const iso = $("#modIsolate");
+  if (iso) iso.addEventListener("click", async () => {
+    const vid = modVersion();
+    if (!confirm(`把 ${vid} 切到独立游戏目录？\n\n之后它的模组、光影、存档都只属于它自己；原来的存档和设置不会自动搬过去（仍留在原目录）。`)) return;
+    try {
+      const r = await api("/api/content/isolate", { method: "POST", body: JSON.stringify({ version: vid }) });
+      state.modsData = r.state;
+      renderModMeta(r.state);
+      renderModList(r.state);
+      toast("已创建独立目录：" + r.game_dir, "ok");
+      loadLocal();
+    } catch (e) { toast(e.message, "err"); }
+  });
+}
+
+function renderModList(d) {
+  if (!d) return;
+  const area = state.modsArea;
+  const box = d.areas[area];
+  if (!box) return;
+  const items = box.items || [];
+  $("#modBulk").hidden = !items.length;
+  $("#modCount").textContent = `共 ${box.total} 个${MOD_AREAS[area]} · 已启用 ${box.enabled} 个`;
+  const on = items.filter((i) => i.enabled).length;
+  $("#modEnableAll").disabled = !items.length || on === items.length;
+  $("#modDisableAll").disabled = !on;
+  if (!items.length) {
+    $("#modList").innerHTML = `<div class="empty">${MOD_EMPTY[area]}</div>`;
+    return;
+  }
+  const instLoader = d.loader || "vanilla";
+  $("#modList").innerHTML = items.map((it) => {
+    const ml = it.mod_loader || "";
+    let badge = "";
+    if (ml && area === "mods") {
+      const okPair = ml === instLoader || (instLoader === "quilt" && ml === "fabric");
+      const label = LOADER_LABEL[ml] || ml;
+      badge = instLoader === "vanilla"
+        ? `<span class="loader-badge badge-warn">${esc(label)} 模组 · 当前版本没装加载器</span>`
+        : okPair ? `<span class="loader-badge plain">${esc(label)}</span>`
+        : `<span class="loader-badge badge-warn">${esc(label)} · 与本版本加载器不同</span>`;
+    }
+    const desc = (it.description || "").replace(/\s+/g, " ").slice(0, 80);
+    return `<div class="mod-row ${it.enabled ? "" : "off"}" data-file="${esc(it.file)}">
+      <div class="mod-info">
+        <div class="mod-title"><span>${esc(it.title || it.name)}</span>${it.version ? `<span class="mod-ver">${esc(it.version)}</span>` : ""}${badge}</div>
+        <div class="mod-sub"><span class="mono">${esc(it.name)}</span><span>·</span><span>${fmtBytes(it.size)}</span>${desc ? `<span>·</span><span>${esc(desc)}</span>` : ""}</div>
+      </div>
+      <button class="switch ${it.enabled ? "on" : ""}" data-toggle="${esc(it.file)}" title="${it.enabled ? "点击停用" : "点击启用"}"></button>
+      <button class="mod-del" data-del="${esc(it.file)}" title="删除（移到回收站）">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/></svg>
+      </button>
+    </div>`;
+  }).join("");
+
+  $$("#modList [data-toggle]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const file = btn.dataset.toggle;
+      const enabled = !btn.classList.contains("on");
+      btn.disabled = true;
+      try {
+        const r = await api("/api/content/toggle", {
+          method: "POST",
+          body: JSON.stringify({ version: modVersion(), area: state.modsArea, file, enabled }),
+        });
+        state.modsData = r.state;
+        renderModList(r.state);
+        toast(enabled ? "已启用 " + file.replace(/\.disabled$/, "") : "已停用 " + file, "ok");
+      } catch (e) {
+        toast(e.message, "err");
+        btn.disabled = false;
+      }
+    });
+  });
+
+  $$("#modList [data-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const file = btn.dataset.del;
+      if (!confirm(`把 ${file} 移到回收站？\n（会放进游戏目录的 .lantern-trash，可手动找回）`)) return;
+      try {
+        const r = await api("/api/content/delete", {
+          method: "POST",
+          body: JSON.stringify({ version: modVersion(), area: state.modsArea, file }),
+        });
+        state.modsData = r.state;
+        renderModList(r.state);
+        toast("已移到回收站", "ok");
+        loadLocal();
+      } catch (e) { toast(e.message, "err"); }
+    });
+  });
+}
+
+function openContentDir(area) {
+  const vid = modVersion();
+  if (!vid) { toast("先选一个版本", "err"); return; }
+  api("/api/open", { method: "POST", body: JSON.stringify({ target: area || "instance", version: vid }) })
+    .catch((e) => toast(e.message, "err"));
+}
+
+async function bulkMods(enabled) {
+  const vid = modVersion();
+  if (!vid) return;
+  try {
+    const r = await api("/api/content/toggle-all", {
+      method: "POST",
+      body: JSON.stringify({ version: vid, area: state.modsArea, enabled }),
+    });
+    state.modsData = r.state;
+    renderModList(r.state);
+    toast(enabled ? `已启用 ${r.changed} 个${MOD_AREAS[state.modsArea]}` : `已停用 ${r.changed} 个${MOD_AREAS[state.modsArea]}`, "ok");
+    if (r.errors && r.errors.length) toast("部分文件失败：" + r.errors[0], "err");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function importFiles(files, kind) {
+  const vid = modVersion();
+  if (!vid) { toast("先在「模组」页选一个已安装版本", "err"); return; }
+  const list = Array.from(files || []);
+  if (!list.length) return;
+  $("#taskbar").classList.add("show");
+  let last = null;
+  let asPack = false;
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      $("#taskTitle").textContent = "导入 " + f.name;
+      $("#taskSub").textContent = `${i + 1}/${list.length} · ${fmtBytes(f.size)}`;
+      $("#taskFill").style.width = Math.round((i / list.length) * 100) + "%";
+      $("#taskPercent").textContent = `${i + 1}/${list.length}`;
+      const qs = new URLSearchParams({ version: vid, kind: kind || "auto" });
+      const res = await fetch("/api/content/upload?" + qs.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(f.name) },
+        body: f,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || `上传失败 (${res.status})`);
+      if (data.area === "modpack") {
+        asPack = true;
+        toast(data.message || "识别为整合包，开始安装", "ok");
+        break;
+      }
+      last = data;
+    }
+    if (asPack) { go("logs"); return; }
+    if (last && last.state) {
+      state.modsData = last.state;
+      if (last.area && last.area !== state.modsArea) {
+        state.modsArea = last.area;
+        $$("#modTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.area === last.area));
+      }
+      renderModMeta(last.state);
+      renderModList(last.state);
+    } else {
+      await refreshMods();
+    }
+    toast(`已导入 ${list.length} 个文件`, "ok");
+    loadLocal();
+  } catch (e) {
+    toast("导入失败：" + e.message, "err");
+  } finally {
+    $("#taskbar").classList.remove("show");
+    $("#modFile").value = "";
+    $("#shaderFile").value = "";
+  }
+}
+
+$("#modVersion").addEventListener("change", (e) => {
+  state.modsVersion = e.target.value;
+  refreshMods();
+});
+
+$("#modTabs").addEventListener("click", (e) => {
+  const tab = e.target.closest(".tab");
+  if (!tab) return;
+  state.modsArea = tab.dataset.area;
+  $$("#modTabs .tab").forEach((t) => t.classList.toggle("active", t === tab));
+  renderModList(state.modsData);
+});
+
+$("#modRefresh").addEventListener("click", () => {
+  loadLocal().catch(() => {});
+  refreshMods();
+});
+
+$("#modOpenDir").addEventListener("click", () => openContentDir(state.modsArea));
+
+$("#modEnableAll").addEventListener("click", () => bulkMods(true));
+$("#modDisableAll").addEventListener("click", () => bulkMods(false));
+
+$("#modImport").addEventListener("click", () => $("#modFile").click());
+$("#shaderImport").addEventListener("click", () => $("#shaderFile").click());
+$("#modFile").addEventListener("change", (e) => importFiles(e.target.files, "mods"));
+$("#shaderFile").addEventListener("change", (e) => importFiles(e.target.files, "auto"));
+
 /* ---------------- 安装 / 启动 ---------------- */
 
-async function installVersion(id) {
+const LOADER_LABEL = {
+  vanilla: "原版", fabric: "Fabric", forge: "Forge",
+  neoforge: "NeoForge", quilt: "Quilt",
+};
+
+const installState = { id: "", loader: "vanilla", loading: false, cache: {} };
+
+function openInstall(id) {
+  installState.id = id;
+  installState.loader = "vanilla";
+  $("#installTitle").textContent = "安装 " + id;
+  $("#installHint").textContent = "原版会装到共享游戏目录；选加载器则会创建独立目录，模组 / 光影 / 存档互不影响。";
+  $("#loaderVerBox").hidden = true;
+  $("#loaderVersion").innerHTML = "";
+  $("#installOk").disabled = false;
+  $$("#loaderRow .loader-chip").forEach((c) => {
+    c.classList.toggle("active", c.dataset.loader === "vanilla");
+    c.removeAttribute("data-unavailable");
+    c.title = "";
+  });
+  $("#installModal").classList.add("show");
+  probeLoaders(id);
+}
+
+function selectLoader(loader) {
+  installState.loader = loader;
+  $$("#loaderRow .loader-chip").forEach((c) => c.classList.toggle("active", c.dataset.loader === loader));
+  if (loader === "vanilla") {
+    $("#loaderVerBox").hidden = true;
+    $("#installHint").textContent = "原版会装到共享游戏目录；想装模组的话建议选一个加载器。";
+    $("#installOk").disabled = false;
+    return;
+  }
+  $("#loaderVerBox").hidden = false;
+  loadLoaderVersions(loader);
+}
+
+async function probeLoaders(mc) {
+  const hit = installState.cache[mc];
+  if (hit) return applyLoaderSummary(hit);
+  try {
+    const data = await api("/api/loaders/summary?mc=" + encodeURIComponent(mc));
+    installState.cache[mc] = data.loaders || {};
+    applyLoaderSummary(installState.cache[mc]);
+  } catch (e) { /* 探测失败不影响手动点选 */ }
+}
+
+function applyLoaderSummary(summary) {
+  if (!summary) return;
+  $$("#loaderRow .loader-chip").forEach((c) => {
+    const key = c.dataset.loader;
+    if (key === "vanilla") return;
+    const item = summary[key];
+    if (!item) return;
+    if (item.ok) {
+      c.removeAttribute("data-unavailable");
+      c.title = `最新 ${item.recommend}` + (item.count ? ` · 共 ${item.count} 个版本` : "");
+    } else {
+      c.dataset.unavailable = "1";
+      c.title = item.error || `${installState.id} 没有 ${LOADER_LABEL[key]} 可用版本`;
+    }
+  });
+}
+
+async function loadLoaderVersions(loader) {
+  const mc = installState.id;
+  const box = $("#loaderVersion");
+  const label = LOADER_LABEL[loader] || loader;
+  $("#loaderVerLabel").textContent = `${label} 版本`;
+  $("#loaderVerNote").textContent = "";
+  box.innerHTML = '<option value="">读取中…</option>';
+  $("#installOk").disabled = true;
+  $("#installHint").textContent = `正在读取 ${mc} 可用的 ${label} 版本…`;
+  try {
+    const data = await api(`/api/loaders?mc=${encodeURIComponent(mc)}&loader=${encodeURIComponent(loader)}`);
+    if (!data.versions.length) throw new Error(`${mc} 没有可用的 ${label} 版本`);
+    box.innerHTML = data.versions.map((v, i) => {
+      const tags = [];
+      if (i === 0) tags.push("推荐");
+      if (v.stable === false) tags.push("测试版");
+      return `<option value="${esc(v.version)}">${esc(v.version)}${tags.length ? "  ·  " + tags.join(" / ") : ""}</option>`;
+    }).join("");
+    $("#loaderVerNote").textContent = data.cached ? "（缓存）" : "";
+    $("#installHint").textContent = `将为 ${mc} 安装 ${label}，并创建独立的游戏目录。`;
+    $("#installOk").disabled = false;
+  } catch (e) {
+    box.innerHTML = '<option value="">没有可用版本</option>';
+    $("#installHint").textContent = `${label}：${e.message}。可以换一个加载器，或先装原版。`;
+    $("#installOk").disabled = true;
+  }
+}
+
+$$("#loaderRow .loader-chip").forEach((chip) => {
+  chip.addEventListener("click", () => selectLoader(chip.dataset.loader));
+});
+
+$("#loaderVerRefresh").addEventListener("click", () => {
+  if (installState.loader !== "vanilla") loadLoaderVersions(installState.loader);
+});
+
+$("#installCancel").addEventListener("click", () => $("#installModal").classList.remove("show"));
+
+$("#installOk").addEventListener("click", async () => {
+  const loader = installState.loader;
+  const lv = loader === "vanilla" ? "" : ($("#loaderVersion").value || "");
+  if (loader !== "vanilla" && !lv) { toast("先选一个加载器版本", "err"); return; }
+  $("#installModal").classList.remove("show");
+  await installVersion(installState.id, loader, lv);
+});
+
+async function installVersion(id, loader, loaderVersion) {
+  loader = loader || "vanilla";
   try {
     $("#taskbar").classList.add("show");
     $("#taskTitle").textContent = "准备下载 " + id;
-    $("#taskSub").textContent = "";
+    $("#taskSub").textContent = loader !== "vanilla"
+      ? `${LOADER_LABEL[loader]} ${loaderVersion || ""}`.trim() : "原版";
     $("#taskFill").style.width = "2%";
     $("#taskPercent").textContent = "0%";
-    await api("/api/install", { method: "POST", body: JSON.stringify({ id }) });
-    toast("开始下载 " + id);
+    await api("/api/install", {
+      method: "POST",
+      body: JSON.stringify({ id, loader, loader_version: loaderVersion || "" }),
+    });
+    toast(loader === "vanilla" ? "开始下载 " + id : `开始安装 ${id} + ${LOADER_LABEL[loader]}`);
   } catch (e) {
     toast(e.message, "err");
     $("#taskbar").classList.remove("show");
@@ -318,6 +701,8 @@ async function installVersion(id) {
 
 async function launchVersion(id) {
   try {
+    state.currentVersion = id;
+    state.modsVersion = id;
     toast("正在启动 " + id + "…");
     await api("/api/launch", { method: "POST", body: JSON.stringify({ id }) });
     go("logs");
@@ -416,10 +801,22 @@ function applyStatus(data) {
     $("#taskbar").classList.remove("show");
     if (t.error) toast("任务失败：" + t.error, "err");
     else if (t.phase === "完成") {
-      toast(t.kind === "modpack" ? "整合包安装完成" : "下载完成", "ok");
+      const done = (t.result && t.result.version) || t.version || "";
+      const loader = (t.result && t.result.loader) || "vanilla";
+      toast(t.kind === "modpack" ? "整合包安装完成"
+        : loader !== "vanilla" ? `已安装 ${done}（${LOADER_LABEL[loader] || loader}）`
+        : "下载完成", "ok");
       if (t.result && t.result.note) toast(t.result.note, "err");
       if (t.kind === "modpack") go("versions");
       if (t.kind === "link") loadLink();
+      if (t.kind === "install" && done) {
+        state.currentVersion = done;
+        if (loader !== "vanilla") {
+          state.modsVersion = done;
+          toast("这个版本已有独立游戏目录，可以去「模组」页导入模组和光影", "");
+        }
+      }
+      if (isPage("mods")) loadMods();
     }
     loadLocal();
     loadVersions(false);
@@ -929,8 +1326,8 @@ window.addEventListener("keydown", (e) => {
 });
 
 const PAGE_TITLES = {
-  home: "主页", download: "下载", modpack: "整合包", link: "联机", versions: "版本",
-  settings: "设置", logs: "日志",
+  home: "主页", download: "下载", modpack: "整合包", mods: "模组", link: "联机",
+  versions: "版本", settings: "设置", logs: "日志",
 };
 
 
@@ -1120,15 +1517,33 @@ window.addEventListener("drop", async (e) => {
   e.preventDefault();
   e.stopPropagation();
   showVeil(false);
-  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if (!file) return;
+  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+  if (!files.length) return;
+  const jars = files.filter((f) => f.name.toLowerCase().endsWith(".jar"));
+  if (jars.length) {
+    if (jars.length !== files.length) toast("一次只处理同类型文件，先导入模组", "err");
+    if (!modVersion()) { go("mods"); toast("先在「模组」页选一个版本，再拖入 .jar", "err"); return; }
+    await importFiles(jars, "mods");
+    return;
+  }
+  const file = files[0];
   const lower = file.name.toLowerCase();
   if (!lower.endsWith(".mrpack") && !lower.endsWith(".zip")) {
-    toast("只支持 .mrpack 或 .zip 整合包", "err");
+    toast("支持 .jar 模组、.zip 光影 / 资源包、.mrpack / .zip 整合包", "err");
+    return;
+  }
+  // 在「模组」页拖 .zip → 当成光影 / 资源包导入（辨识为整合包时后端会自动改为安装）
+  if (isPage("mods") && /\.zip$/.test(lower)) {
+    await importFiles([file], "auto");
     return;
   }
   await uploadPack(file);
 });
+
+function isPage(name) {
+  const el = document.getElementById("page-" + name);
+  return !!el && el.classList.contains("active");
+}
 
 async function uploadPack(file) {
   $("#taskbar").classList.add("show");
@@ -1336,10 +1751,11 @@ window.addEventListener("hashchange", () => go(location.hash.replace("#", "")));
 (async function boot() {
   try {
     await loadConfig();
-    await Promise.all([loadVersions(false), loadLocal()]);
+    // 先切到目标页面再拉数据：版本清单在慢网络下可能要几十秒，不能挡住导航
     go(location.hash.replace("#", "") || "home");
     poll();
     connectStream();
+    await Promise.all([loadVersions(false), loadLocal()]);
   } catch (e) {
     toast("初始化失败：" + e.message, "err");
   }

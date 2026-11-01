@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
-from core import auth, installer, java as javamod, launch as launcher, live
+from core import auth, content, installer, java as javamod, launch as launcher, live
 from core import link, modpack, mslogin, updater
 from core.config import CACHE_DIR, LOG_DIR, ROOT, config
 from core.manifest import fetch_manifest, get_version_json, list_local_versions, list_versions
@@ -79,19 +79,43 @@ class TaskManager:
         self._log("正在取消…")
 
     # ---------- 安装 ----------
-    def start_install(self, version_id: str, version_url: str = "") -> bool:
+    def start_install(self, version_id: str, version_url: str = "",
+                      loader: str = "", loader_version: str = "") -> bool:
         if self.busy:
             return False
+        loader = (loader or "").lower()
         self._cancel = threading.Event()
         self._update(kind="install", version=version_id, phase="准备中", running=True,
-                     message="", error="", progress=None, logs=[], started_at=time.time())
+                     message="", error="", progress=None, logs=[], started_at=time.time(),
+                     result={})
 
         def run() -> None:
             try:
+                if loader and loader not in ("vanilla", "none"):
+                    label = content.LOADER_LABEL.get(loader, loader)
+                    self._log(f"目标：{version_id} + {label} {loader_version or '（推荐版本）'}")
                 installer.install(version_id, version_url, progress=self._progress,
                                   emit=self._log, cancel=self._cancel)
-                self._update(phase="完成", running=False)
-            except installer.Cancelled:
+                final = version_id
+                if loader and loader not in ("vanilla", "none"):
+                    label = content.LOADER_LABEL.get(loader, loader)
+                    self._update(phase=f"安装 {label}")
+                    final = modpack.ensure_loader(version_id, loader, loader_version,
+                                                  emit=self._log, cancel=self._cancel)
+                    game_dir = ""
+                    try:
+                        game_dir = str(content.ensure_instance(final))
+                        self._log(f"已创建独立游戏目录：{game_dir}")
+                        self._log("这个版本的模组、光影、存档都只属于它自己")
+                    except Exception as e:  # noqa: BLE001
+                        self._log(f"（独立游戏目录创建失败，将使用共享目录：{e}）")
+                    self._update(phase="完成", running=False, version=final,
+                                 result={"version": final, "loader": loader,
+                                         "game_dir": game_dir})
+                else:
+                    self._update(phase="完成", running=False, version=final,
+                                 result={"version": final, "loader": "vanilla"})
+            except (installer.Cancelled, modpack.Cancelled):
                 self._update(phase="已取消", running=False)
             except Exception as e:  # noqa: BLE001
                 traceback.print_exc()
@@ -307,6 +331,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if url.path == "/api/modpack/upload":
                 return self._upload_pack()
+            if url.path == "/api/content/upload":
+                return self._upload_content(urlparse(self.path))
             return self._api_post(url.path, self._body())
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
@@ -414,8 +440,10 @@ class Handler(BaseHTTPRequestHandler):
             for v in list_local_versions():
                 meta = v.meta
                 pack = modpack.load_pack_meta(v.id)
+                loader = content.detect_loader(v.id)
                 out.append({
-                    "id": v.id, "has_jar": v.has_jar, "loader": v.loader,
+                    "id": v.id, "has_jar": v.has_jar, "loader": loader,
+                    "loader_label": content.LOADER_LABEL.get(loader, loader),
                     "type": meta.get("type", "release"),
                     "java": (meta.get("javaVersion") or {}).get("majorVersion", 8),
                     "size": installer.installed_size(v.id),
@@ -423,6 +451,8 @@ class Handler(BaseHTTPRequestHandler):
                     "pack_version": pack.get("version") or "",
                     "source": pack.get("source") or "",
                     "instance": pack.get("instance") or "",
+                    "isolated": modpack.instance_game_dir(v.id) is not None,
+                    "mods": content.item_count(v.id),
                     "mc_version": pack.get("mc_version") or "",
                 })
             return self._json({"versions": out})
@@ -440,6 +470,34 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **modpack.probe_sources()})
             except Exception as e:  # noqa: BLE001
                 return self._error(f"测速失败：{e}")
+
+        if path == "/api/loaders":
+            mc = (qs.get("mc", [""])[0] or "").strip()
+            loader = (qs.get("loader", ["vanilla"])[0] or "vanilla").strip().lower()
+            refresh = (qs.get("refresh", ["0"])[0] or "0") == "1"
+            if not mc:
+                return self._error("缺少 Minecraft 版本号")
+            try:
+                return self._json({"ok": True, **content.loader_versions(mc, loader, refresh)})
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
+
+        if path == "/api/loaders/summary":
+            mc = (qs.get("mc", [""])[0] or "").strip()
+            if not mc:
+                return self._error("缺少 Minecraft 版本号")
+            return self._json({"ok": True, **content.loader_summary(mc)})
+
+        if path == "/api/content":
+            vid = (qs.get("version", [""])[0] or "").strip()
+            if not vid:
+                return self._error("缺少 version")
+            if not (config.versions_dir / vid).exists():
+                return self._error(f"版本 {vid} 还没安装")
+            try:
+                return self._json({"ok": True, **content.state(vid)})
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"读取模组列表失败：{e}")
 
         if path == "/api/modpack/search":
             q = (qs.get("q", [""])[0] or "").strip()
@@ -546,6 +604,77 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "name": name, "size": got,
                            "message": f"已接收 {name}，开始安装"})
 
+    def _upload_content(self, url):
+        """接收用户自行导入的模组 / 光影 / 资源包（流式写入，再按类型归档）。"""
+        qs = parse_qs(url.query)
+        vid = (qs.get("version", [""])[0] or "").strip()
+        kind = (qs.get("kind", ["auto"])[0] or "auto").strip().lower()
+        aliases = {"mod": "mods", "shader": "shaderpacks", "shaders": "shaderpacks",
+                   "resource": "resourcepacks", "resourcepack": "resourcepacks",
+                   "auto": "auto", "mods": "mods", "shaderpacks": "shaderpacks",
+                   "resourcepacks": "resourcepacks"}
+        kind = aliases.get(kind, "auto")
+        if not vid:
+            return self._error("先选择要导入到哪个版本")
+        if not (config.versions_dir / vid).exists():
+            return self._error(f"版本 {vid} 还没安装")
+
+        raw_name = unquote(self.headers.get("X-Filename") or "file.jar")
+        name = re.sub(r'[\\/:*?"<>|\r\n]+', "_", raw_name).strip() or "file.jar"
+        try:
+            total = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            total = 0
+        if total <= 0:
+            return self._error("没有收到文件内容")
+        if total > 512 * 1024 * 1024:
+            return self._error("文件太大（单个上限 512 MB）")
+        if not name.lower().endswith((".jar", ".zip")):
+            return self._error("只支持 .jar 模组或 .zip 光影 / 资源包")
+
+        staging = CACHE_DIR / "imports"
+        staging.mkdir(parents=True, exist_ok=True)
+        tmp = staging / f"{time.strftime('%Y%m%d-%H%M%S')}-{name}"
+        got = 0
+        try:
+            with open(tmp, "wb") as f:
+                while got < total:
+                    chunk = self.rfile.read(min(1 << 20, total - got))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    got += len(chunk)
+        except Exception as e:  # noqa: BLE001
+            tmp.unlink(missing_ok=True)
+            return self._error(f"接收文件失败：{e}")
+        if got != total:
+            tmp.unlink(missing_ok=True)
+            return self._error("文件上传中断，请重试")
+
+        try:
+            if kind == "auto" and content.classify(tmp) == "modpack":
+                # 拖到「模组」页的整合包也照装，省得用户再切页面重拖
+                if task.busy:
+                    tmp.unlink(missing_ok=True)
+                    return self._error("已有任务在进行中，等它完成后再拖入")
+
+                def work(cancel):
+                    return modpack.install_from_file(tmp, progress=task._progress,
+                                                     emit=task._log, cancel=cancel)
+
+                if not task.start_pack(Path(name).stem, work):
+                    tmp.unlink(missing_ok=True)
+                    return self._error("已有任务在进行中")
+                return self._json({"ok": True, "size": got, "area": "modpack",
+                                   "name": name,
+                                   "message": f"{name} 是整合包，已开始安装"})
+            info = content.place(vid, tmp, kind, filename=name)
+        except Exception as e:  # noqa: BLE001
+            tmp.unlink(missing_ok=True)
+            return self._error(f"导入失败：{e}")
+        return self._json({"ok": True, "size": got, **info,
+                           "state": content.state(vid)})
+
     def _api_post(self, path: str, body: dict):
         if path == "/api/app/quit":
             # 界面上点“退出”时走这里；延迟一下让响应先发出去
@@ -566,12 +695,16 @@ class Handler(BaseHTTPRequestHandler):
             vid = (body.get("id") or "").strip()
             if not vid:
                 return self._error("缺少版本 ID")
-            # 校验版本是否存在
+            loader = (body.get("loader") or "vanilla").strip().lower()
+            loader_version = (body.get("loader_version") or "").strip()
+            # 校验版本是否存在（清单里的官方版本，或本地已装的自定义版本）
             match = [v for v in list_versions() if v.id == vid]
-            if not match:
+            url = match[0].url if match else ""
+            if not match and not (config.versions_dir / vid).exists():
                 return self._error(f"版本 {vid} 不存在")
-            if task.start_install(vid, match[0].url):
-                return self._json({"ok": True, "version": vid})
+            if task.start_install(vid, url, loader, loader_version):
+                return self._json({"ok": True, "version": vid, "loader": loader,
+                                   "loader_version": loader_version})
             return self._error("已有任务在进行中")
 
         if path == "/api/modpack/install":
@@ -591,6 +724,54 @@ class Handler(BaseHTTPRequestHandler):
             if task.start_pack(title, work):
                 return self._json({"ok": True, "message": f"开始安装《{title}》"})
             return self._error("已有任务在进行中")
+
+        if path == "/api/content/toggle":
+            vid = (body.get("version") or "").strip()
+            area = (body.get("area") or "mods").strip()
+            name = (body.get("file") or "").strip()
+            if not vid or not name:
+                return self._error("缺少 version / file")
+            try:
+                res = content.toggle(vid, area, name, bool(body.get("enabled", True)))
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
+            return self._json({"ok": True, **res, "state": content.state(vid)})
+
+        if path == "/api/content/toggle-all":
+            vid = (body.get("version") or "").strip()
+            area = (body.get("area") or "mods").strip()
+            if not vid:
+                return self._error("缺少 version")
+            try:
+                res = content.toggle_all(vid, area, bool(body.get("enabled", True)))
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
+            return self._json({"ok": True, **res, "state": content.state(vid)})
+
+        if path == "/api/content/delete":
+            vid = (body.get("version") or "").strip()
+            area = (body.get("area") or "mods").strip()
+            name = (body.get("file") or "").strip()
+            if not vid or not name:
+                return self._error("缺少 version / file")
+            try:
+                res = content.remove(vid, area, name)
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
+            return self._json({"ok": True, **res, "state": content.state(vid)})
+
+        if path == "/api/content/isolate":
+            vid = (body.get("version") or "").strip()
+            if not vid:
+                return self._error("缺少 version")
+            if not (config.versions_dir / vid).exists():
+                return self._error(f"版本 {vid} 还没安装")
+            try:
+                game_dir = content.ensure_instance(vid)
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"创建独立目录失败：{e}")
+            return self._json({"ok": True, "game_dir": str(game_dir),
+                               "state": content.state(vid)})
 
         if path == "/api/link/map":
             try:
@@ -754,6 +935,13 @@ class Handler(BaseHTTPRequestHandler):
                 p = config.versions_dir / (body.get("id") or "")
             elif target == "logs":
                 p = LOG_DIR
+            elif target in ("mods", "shaderpacks", "resourcepacks", "instance"):
+                vid = (body.get("version") or "").strip()
+                if not vid:
+                    return self._error("缺少 version")
+                base = content.game_dir_for(vid)
+                p = base if target == "instance" else base / content.AREAS[target][0]
+                p.mkdir(parents=True, exist_ok=True)
             else:
                 return self._error("未知目录")
             if not p.exists():
@@ -806,7 +994,8 @@ def start(port: int = 8787, open_browser: bool = False) -> tuple:
 
     threading.Thread(target=httpd.serve_forever, daemon=True,
                      name="lantern-http").start()
-    url = f"http://127.0.0.1:{port}/"
+    real_port = port or httpd.server_address[1]
+    url = f"http://127.0.0.1:{real_port}/"
     print(f"{APP_NAME} {VERSION} 已启动：{url}")
     print(f"数据目录：{DATA_DIR}")
     if open_browser:

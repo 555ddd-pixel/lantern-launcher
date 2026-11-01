@@ -509,21 +509,35 @@ def _run_forge_installer(mc: str, loader: str, lv: str,
     from . import installer, java as javamod
 
     if loader == "forge":
-        url = (f"https://maven.minecraftforge.net/net/minecraftforge/forge/"
-               f"{mc}-{lv}/forge-{mc}-{lv}-installer.jar")
+        rel = f"net/minecraftforge/forge/{mc}-{lv}/forge-{mc}-{lv}-installer.jar"
         expected = f"{mc}-forge-{lv}"
     else:
-        url = (f"https://maven.neoforged.net/releases/net/neoforged/neoforge/"
-               f"{lv}/neoforge-{lv}-installer.jar")
+        rel = f"net/neoforged/neoforge/{lv}/neoforge-{lv}-installer.jar"
         expected = f"neoforge-{lv}"
+    # 大陆直连 neoforged / forge 官方 maven 常超时，失败后换 BMCLAPI 镜像
+    urls = [
+        (f"https://maven.minecraftforge.net/{rel}" if loader == "forge"
+         else f"https://maven.neoforged.net/releases/{rel}"),
+        f"https://bmclapi2.bangbang93.com/maven/{rel}",
+    ]
 
     java = javamod.pick(8)
     if java is None:
         raise RuntimeError("安装 Forge/NeoForge 需要 Java 11+，请先在设置里指定 Java")
 
-    jar = CACHE_DIR / "installers" / Path(urllib.parse.urlparse(url).path).name
+    jar = CACHE_DIR / "installers" / Path(urllib.parse.urlparse(urls[0]).path).name
     emit(f"下载 {LOADER_LABEL[loader]} 安装器…")
-    net.download_file(url, jar)
+    last_err: Optional[Exception] = None
+    for u in urls:
+        try:
+            net.download_file(u, jar)
+            last_err = None
+            break
+        except Exception as e:  # noqa: BLE001 - 换镜像再试
+            last_err = e
+            emit(f"  下载失败（{u.split('/')[2]}），换下一个源…")
+    if last_err is not None:
+        raise RuntimeError(f"下载 {LOADER_LABEL[loader]} 安装器失败：{last_err}")
 
     emit(f"运行 {LOADER_LABEL[loader]} 安装器（可能要 1~3 分钟）…")
     cmd = [str(java.path), "-jar", str(jar), "--installClient", str(config.game_dir)]

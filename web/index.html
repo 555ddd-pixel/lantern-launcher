@@ -35,6 +35,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5"/><path d="M12 12v9"/></svg>
         <span>整合包</span>
       </button>
+      <button class="nav-item" data-page="mods">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M8.5 9.2v5.6M15.5 9.2v5.6"/></svg>
+        <span>模组</span>
+      </button>
       <button class="nav-item" data-page="link">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M6.6 7.2L10 10.2M17.4 7.2L14 10.2M6.6 16.8L10 13.8M17.4 16.8L14 13.8"/></svg>
         <span>联机</span>
@@ -201,6 +205,47 @@
         <div class="empty">输入关键词实时搜索，或把整合包文件拖进窗口。</div>
       </div>
       <div class="list-foot" id="packCount"></div>
+    </section>
+
+    <!-- 模组 / 光影 / 资源包 -->
+    <section class="page" id="page-mods">
+      <div class="page-head">
+        <div>
+          <h1>模组与光影</h1>
+          <p class="muted">按版本管理模组、光影与资源包。可以单独启停，也可以一键全部启停；<span class="mono">.jar</span> 模组和光影 <span class="mono">.zip</span> 支持直接拖进窗口导入。</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-ghost btn-mini" id="modOpenDir">打开目录</button>
+          <button class="btn btn-ghost btn-mini" id="modRefresh">刷新</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <select class="mini-select" id="modVersion" title="选择版本"></select>
+        <div class="tabs" id="modTabs">
+          <button class="tab active" data-area="mods">模组</button>
+          <button class="tab" data-area="shaderpacks">光影</button>
+          <button class="tab" data-area="resourcepacks">资源包</button>
+        </div>
+        <div class="grow"></div>
+        <button class="btn btn-primary btn-mini" id="modImport">导入模组</button>
+        <button class="btn btn-mini" id="shaderImport">导入光影 / 资源包</button>
+        <input type="file" id="modFile" accept=".jar" multiple hidden>
+        <input type="file" id="shaderFile" accept=".zip" multiple hidden>
+      </div>
+
+      <div class="mod-meta" id="modMeta" hidden></div>
+
+      <div class="mod-bulk" id="modBulk" hidden>
+        <span class="small muted" id="modCount"></span>
+        <div class="grow"></div>
+        <button class="btn btn-ghost btn-mini" id="modEnableAll">一键全部启用</button>
+        <button class="btn btn-ghost btn-mini" id="modDisableAll">一键全部停用</button>
+      </div>
+
+      <div class="mod-list" id="modList">
+        <div class="empty">先选一个已安装的版本。</div>
+      </div>
     </section>
 
     <!-- 联机 -->
@@ -508,6 +553,47 @@
   </div>
 </div>
 
+<!-- 下载前的加载器选择 -->
+<div class="modal-mask" id="installModal">
+  <div class="modal modal-install">
+    <h3 id="installTitle">安装 1.20.1</h3>
+    <p class="muted small">先选要构建的类型。原版不带模组；选加载器后会自动装好并创建独立游戏目录，模组 / 光影 / 存档互不影响。</p>
+
+    <div class="loader-row" id="loaderRow">
+      <button class="loader-chip active" data-loader="vanilla">
+        <strong>原版</strong><em>Vanilla</em><span>纯净游戏，不装模组加载器</span>
+      </button>
+      <button class="loader-chip" data-loader="fabric">
+        <strong>Fabric</strong><em>轻量 · 更新最快</em><span>大多数优化 / 小地图模组首选</span>
+      </button>
+      <button class="loader-chip" data-loader="neoforge">
+        <strong>NeoForge</strong><em>1.20.2+ 主流</em><span>新版本大型整合包常用</span>
+      </button>
+      <button class="loader-chip" data-loader="forge">
+        <strong>Forge</strong><em>老牌 · 兼容广</em><span>1.12 / 1.16 / 1.20 老模组多</span>
+      </button>
+      <button class="loader-chip" data-loader="quilt">
+        <strong>Quilt</strong><em>Fabric 分支</em><span>兼容 Fabric 模组生态</span>
+      </button>
+    </div>
+
+    <div class="loader-ver" id="loaderVerBox" hidden>
+      <div class="loader-ver-head">
+        <span class="small"><strong id="loaderVerLabel">加载器版本</strong><span class="muted" id="loaderVerNote"></span></span>
+        <button class="btn btn-ghost btn-mini" id="loaderVerRefresh">重新获取</button>
+      </div>
+      <select class="mini-select wide" id="loaderVersion"></select>
+    </div>
+
+    <p class="small muted" id="installHint">原版会装到共享目录，模组页仍可单独导入。</p>
+
+    <div class="btn-row modal-foot">
+      <button class="btn btn-ghost" id="installCancel">取消</button>
+      <button class="btn btn-primary" id="installOk">开始安装</button>
+    </div>
+  </div>
+</div>
+
 <!-- 整合包版本选择 -->
 <div class="modal-mask" id="packModal">
   <div class="modal modal-wide">
@@ -526,8 +612,8 @@
     <div class="drop-icon">
       <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
     </div>
-    <strong>松开导入整合包</strong>
-    <span class="muted small">支持 Modrinth .mrpack 与 CurseForge .zip</span>
+    <strong>松开即可导入</strong>
+    <span class="muted small">整合包 .mrpack / .zip 自动安装；模组 .jar、光影 .zip 直接归到当前版本</span>
   </div>
 </div>
 

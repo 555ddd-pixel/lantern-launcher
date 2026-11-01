@@ -131,11 +131,10 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "整合包网络加速：数据源可切「自动 / 官方 / 国内镜像（MCIM mod.mcimirror.top）」，"
-                 "官方超时自动换镜像、坏图改用镜像、可填本机加速代理（只作用于整合包请求）；"
-                 "设置页与整合包页都能一键切换并测试线路。启动器正式改名「老张的minecraft启动器」"
-                 "（窗口标题 / 任务栏 / 托盘 / 界面 / 文件属性；exe 文件名仍为 LanternLauncher.exe，"
-                 "保证老版本自动更新能原地替换）。",
+        "notes": "新增「模组」页：按版本管理模组 / 光影 / 资源包，支持单个启停、"
+                 "一键全部启停、导入与拖拽安装（.jar / .zip）、删除进回收站；"
+                 "下载游戏时可选加载器类型（Fabric / Forge / NeoForge / Quilt）并选择版本，"
+                 "装好后自动创建独立游戏目录；加载器版本列表带国内镜像兜底。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {
