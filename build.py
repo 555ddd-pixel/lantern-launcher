@@ -175,9 +175,9 @@ def main() -> None:
     print(f"  版本    {VERSION} (build {BUILD})")
     print(f"  耗时    {time.time() - t0:.0f}s")
     print("\n分发：")
-    print(f"  1) 到 {REPO_URL}/releases/new 建 Release，Tag 填 v{VERSION}（tag 千万别带多余的点）")
-    print("  2) 上传 dist/LanternLauncher.exe 一个附件就够")
-    print("     update.json 可选：传了就能做 sha1 校验，不传客户端会自己查 GitHub API 拿版本号")
+    print(f"  1) 体检   python tools/release.py            # 核对每个 Release 的 tag 与附件是否一致")
+    print(f"  2) 发布   python tools/release.py --publish  # 按 VERSION={VERSION} 建 tag/Release，传 exe + update.json")
+    print("     （手工发版也别忘：Tag 写 v%s，附件要和这个号对得上）" % VERSION)
     print(f"  3) 发布后，所有客户端（最迟下次启动）即可自动更新到 {VERSION}")
 
 

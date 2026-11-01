@@ -124,9 +124,19 @@ python build.py --clean    # 清掉旧产物后重新打包
 - 双击 `LanternLauncher.exe` 直接弹出**软件窗口**（原生窗口，有标题栏/托盘，不是浏览器标签页）；再次双击不会起第二个实例，而是把已运行的窗口切到前台
 - 窗口实现：默认用 pywebview + WebView2（Windows 10/11 自带运行时）；缺依赖时自动降级为 Edge/Chrome 内核的应用窗口（同样无地址栏），再不行就是普通浏览器页面
 - 「窗口与托盘」设置：关闭窗口时最小化到托盘（点托盘图标恢复）、退出启动器
-- **发布更新的方法**：改 `core/version.py` 里的 `VERSION` → `python build.py` → 到 [Releases](https://github.com/555ddd-pixel/lantern-launcher/releases/new) 建一个 `v1.9.0` 这样的 Tag（**Tag 要带 `v`，版本号本身别多加逗号/点**），上传 `dist/LanternLauncher.exe` 即可。老用户的启动器下一次检查就会自动完成升级
-  - 顺手把 `dist/update.json` 也传上去更好：清单优先，能带发布说明、最小版本要求和 SHA1 校验
-  - 只传 exe 时，客户端走 GitHub API 兜底，同样能升，只是少了 SHA1
+- **发布更新的方法**（推荐走脚本，能杜绝 tag 与附件错位）：
+  ```bash
+  # 1) 改 core/version.py 的 VERSION，然后打包
+  python build.py
+  # 2) 体检：核对每个 Release 的 tag 是否与附件里真实的版本一致
+  python tools/release.py
+  # 3) 发布：按 VERSION 建 tag/Release，自动上传 exe + update.json
+  python tools/release.py --publish
+  ```
+  - 脚本认 `GITHUB_TOKEN`，没有就取 git 凭据管理器里的 token；会自动挑一个能连 github.com 的代理（默认试 `127.0.0.1:7897` / `7890`），也可 `--proxy` 指定
+  - 想在 Release 页写详细说明就编辑 `RELEASE_NOTES.md`，脚本会把它作为正文
+  - 判定依据：每个版本的 exe 体积都不同，脚本从 git 历史里的 `dist/update.json` 反查「附件体积 → 版本号」，所以能一眼看出「v1.8.0 里装的是 1.8.1 的包」这种错位
+- 手工发版也行，但**tag 必须与 exe 的版本号一致**（Tag 要带 `v`，别写成 `v.1.3.0` 这种）。只传 exe、不传 `update.json` 时，1.8.1 以后的客户端会走 GitHub API 兜底，同样能升，只是少了 SHA1 校验；1.8.0 及更早的客户端则必须靠 `update.json` 才能自动升级
 - 只想做离线/U 盘分发时用 `python build.py --local-url`，清单里的地址会退回相对路径（exe 和 update.json 放同一个文件夹即可）
 - 命令行：`--browser`（用默认浏览器打开）、`--headless`（只起服务）、`--port 9000`、`--version`
 
