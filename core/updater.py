@@ -234,7 +234,9 @@ def check(force: bool = False, emit: Optional[Callable[[str], None]] = None) -> 
             return snapshot()
 
         # 所有源都失败：区分「没配置」和「连不上」
-        if all(not Path(s).exists() for s in _sources() if not s.startswith("http")):
+        sources = _sources()
+        has_remote = any(s.startswith(("http://", "https://")) for s in sources)
+        if not has_remote and all(not Path(s).exists() for s in sources):
             msg = "未配置更新源（可在设置里填写更新清单地址）"
         else:
             msg = "；".join(errors)[:300]

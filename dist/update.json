@@ -5,7 +5,7 @@
   "min_version": "1.0.0",
   "files": {
     "windows-x64": {
-      "url": "LanternLauncher.exe",
+      "url": "https://github.com/wunailaozhang/lantern-launcher/releases/download/v1.2.0/LanternLauncher.exe",
       "size": 20184292,
       "sha1": "4eae56f9370fd46471a2bb2bb0f24524b060c78d"
     }

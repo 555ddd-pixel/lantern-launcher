@@ -1,5 +1,10 @@
 # Lantern Launcher 🏮
 
+[![Release](https://img.shields.io/github/v/release/wunailaozhang/lantern-launcher?label=release)](https://github.com/wunailaozhang/lantern-launcher/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-blue)](./README.md)
+
+**下载**：到 [Releases](https://github.com/wunailaozhang/lantern-launcher/releases/latest) 下载 `LanternLauncher.exe`，双击即用（免安装，Windows 10/11 自带 WebView2）。
+
 一个**独立实现**的 Minecraft: Java 版启动器，可以列出并下载 **任意官方版本**（正式版 / 快照 / 远古 Alpha·Beta），下载完整游戏文件并用正确的参数把游戏拉起来。
 
 后端 Python 3 标准库（零第三方依赖），前端是本地 Web 界面，双击 `启动器.bat` 即可运行。
@@ -42,8 +47,9 @@ PCL2（Plain Craft Launcher 2，作者 龙腾猫跃）是我这次调研的参�
 
 启动器可以更新自己，整条链路是：**检查清单 → 后台下载（SHA1 校验）→ 改名交换替换 exe → 自动重启新版本**。
 
-- 更新清单是一个 JSON（`update.json`），默认按顺序找：设置里填的「更新清单地址」（http 或本地路径）→ exe 同目录的 `update.json`
-- 清单里写新版本号、发布说明和各平台下载地址（支持相对路径）；发现更高版本号就提示更新
+- 更新清单是一个 JSON（`update.json`），默认按顺序找：设置里的「更新清单地址」→ exe 同目录的 `update.json`
+- 「更新清单地址」默认指向 `https://github.com/wunailaozhang/lantern-launcher/releases/latest/download/update.json`，所以装过一次之后，只要仓库发了新 Release，客户端就会自己升级；取不到（离线/被墙）时自动回退到本地 `update.json`，不影响使用
+- 清单里写新版本号、发布说明和各平台下载地址；发现更高版本号就提示更新
 - 替换原理：Windows 允许重命名运行中的 exe，直接「旧 exe → .old 备份、新 exe 就位、启动新进程」，无需用户手动操作；失败时自动退回批处理脚本方案
 - 界面上有三处提示：左侧栏更新徽标、主页顶部横幅（带下载进度条）、设置页的「启动器更新」面板
 - 自动行为可在设置里调：自动检查开关、检查间隔、发现新版本是否自动下载
@@ -60,7 +66,8 @@ python build.py --clean    # 清掉旧产物后重新打包
 - 双击 `LanternLauncher.exe` 直接弹出**软件窗口**（原生窗口，有标题栏/托盘，不是浏览器标签页）；再次双击不会起第二个实例，而是把已运行的窗口切到前台
 - 窗口实现：默认用 pywebview + WebView2（Windows 10/11 自带运行时）；缺依赖时自动降级为 Edge/Chrome 内核的应用窗口（同样无地址栏），再不行就是普通浏览器页面
 - 「窗口与托盘」设置：关闭窗口时最小化到托盘（点托盘图标恢复）、退出启动器
-- **发布更新的方法**：改 `core/version.py` 里的版本号 → `python build.py` → 把新的 `LanternLauncher.exe` 和 `update.json` 一起放到你的分发位置（同目录、网盘同步目录或任意 HTTP 服务器）。老用户的启动器就会自动完成升级
+- **发布更新的方法**：改 `core/version.py` 里的 `VERSION` → `python build.py` → 到 [Releases](https://github.com/wunailaozhang/lantern-launcher/releases/new) 建一个 `v1.2.1` 这样的 Tag，把 `dist/LanternLauncher.exe` 和 `dist/update.json` **两个都**作为附件上传 → 发布。老用户的启动器下一次检查就会自动完成升级（`build.py` 已把清单里的下载地址写成对应 Release 的绝对地址）
+- 只想做离线/U 盘分发时用 `python build.py --local-url`，清单里的地址会退回相对路径（exe 和 update.json 放同一个文件夹即可）
 - 命令行：`--browser`（用默认浏览器打开）、`--headless`（只起服务）、`--port 9000`、`--version`
 
 ---

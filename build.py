@@ -21,7 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from core.version import APP_NAME, BUILD, VERSION  # noqa: E402
+from core.version import (APP_NAME, BUILD, REPO_URL, VERSION,  # noqa: E402
+                          release_asset_url)
 
 DIST = ROOT / "dist"
 WORK = ROOT / "build" / "pyinstaller"
@@ -120,7 +121,13 @@ def run_pyinstaller() -> Path:
 
 
 def write_manifest(exe: Path) -> Path:
-    """生成更新清单；url 用相对路径，和 exe 同目录即可直接分发。"""
+    """生成更新清单。
+
+    url 默认写成 GitHub Release 的绝对地址（tag = v{VERSION}），这样清单
+    传到 Release 之后，所有已安装的客户端都能直接更新；
+    传 --local-url 则退回到相对路径（U 盘/离线分发的场景）。
+    """
+    local = "--local-url" in sys.argv
     manifest = {
         "version": VERSION,
         "published": BUILD,
@@ -129,7 +136,7 @@ def write_manifest(exe: Path) -> Path:
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {
-                "url": exe.name,
+                "url": exe.name if local else release_asset_url(exe.name),
                 "size": exe.stat().st_size,
                 "sha1": sha1_of(exe),
             }
@@ -166,8 +173,10 @@ def main() -> None:
     print(f"  清单    {manifest}")
     print(f"  版本    {VERSION} (build {BUILD})")
     print(f"  耗时    {time.time() - t0:.0f}s")
-    print("\n分发：把 dist/LanternLauncher.exe 和 dist/update.json 放进同一个目录；")
-    print("      以后把新的 exe + 更新后的 update.json 覆盖上去，客户端就会自动更新。")
+    print("\n分发：")
+    print(f"  1) 到 {REPO_URL}/releases/new 建 Release，Tag 填 v{VERSION}")
+    print("  2) 上传 dist/LanternLauncher.exe 和 dist/update.json 两个附件")
+    print("  3) 发布后，所有客户端（update_url 指向 latest/download/update.json）即可自动更新")
 
 
 if __name__ == "__main__":

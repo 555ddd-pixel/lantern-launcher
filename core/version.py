@@ -6,6 +6,20 @@ VERSION = "1.2.0"
 BUILD = "2026-11-01"
 CHANNEL = "stable"
 
+# ---------------------------------------------------------------- 发布地址
+# 改这里就能把自动更新指向别的仓库/分支，不用再翻 build.py 和 config.py
+GITHUB_REPO = "wunailaozhang/lantern-launcher"
+REPO_URL = f"https://github.com/{GITHUB_REPO}"
+
+# 更新清单：始终指向「最新 Release」里的 update.json
+MANIFEST_URL = f"{REPO_URL}/releases/latest/download/update.json"
+
+
+def release_asset_url(name: str, tag: str = "") -> str:
+    """某个 Release 里附件的下载地址。tag 省略时用当前版本 v{VERSION}。"""
+    tag = tag or f"v{VERSION}"
+    return f"{REPO_URL}/releases/download/{tag}/{name}"
+
 
 def version_tuple(text: str) -> tuple:
     """把 "1.2.3" / "v1.2.3-beta" 变成可比较的元组。"""

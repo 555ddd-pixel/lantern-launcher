@@ -8,6 +8,7 @@ import threading
 from pathlib import Path
 
 from .paths import DATA_DIR, RES_DIR
+from .version import MANIFEST_URL
 
 # ROOT：可写数据目录（源码运行时=项目目录；打包后=exe 同级目录）
 ROOT = DATA_DIR
@@ -40,8 +41,9 @@ DEFAULTS = {
     "close_to_tray": False,        # 关窗口时缩到托盘而不是退出
 
     # ---------- 实时更新 ----------
-    # 更新清单地址：留空则用内置默认值；也支持填本地文件路径或 http 地址
-    "update_url": "",
+    # 更新清单地址：默认走 GitHub Release 里最新的 update.json；
+    # 也可以填本地文件路径（离线分发），留空则只看内置的 update.json
+    "update_url": MANIFEST_URL,
     "auto_check_update": True,     # 启动时 + 定时检查启动器新版本
     "update_interval_min": 30,     # 自动检查间隔（分钟）
     "auto_download_update": False,  # 发现新版本后自动后台下载（不自动安装）
