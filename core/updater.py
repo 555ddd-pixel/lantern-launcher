@@ -15,8 +15,11 @@
     }
 
 清单可以放在 http(s) 地址上（在设置里填「更新源」），也可以直接放在
-exe 同级的 update.json（离线/U 盘分发场景）。默认先看 update.json，
-所以打包出来的程序开箱就能检查更新。
+exe 同级的 update.json（离线/U 盘分发场景）。默认先看 update.json。
+
+以上都拿不到（比如发版时忘了传 update.json）时，会退一步问 GitHub API
+「最新 Release 是哪个 tag」，再用约定的 exe 附件名拼出下载地址——
+代价是没有 sha1 可校验，只靠版本号和文件大小兜底。
 """
 from __future__ import annotations
 
@@ -34,7 +37,8 @@ from typing import Callable, Optional
 from . import net
 from .config import CACHE_DIR, ROOT, config
 from .paths import FROZEN, RES_DIR, exe_path
-from .version import BUILD, VERSION, version_tuple
+from .version import (API_LATEST_URL, BUILD, RELEASE_ASSET_NAME, VERSION,
+                      version_tuple)
 
 UPDATE_DIR = ROOT / "updates"
 STATE_CACHE = CACHE_DIR / "update_state.json"
@@ -180,6 +184,81 @@ def _save_cache() -> None:
 # ---------------------------------------------------------------- 检查
 
 
+API_LABEL = "GitHub API"
+
+
+def _manifest_from_release() -> dict:
+    """没有 update.json 时的兜底：用 GitHub API 读最新 Release 拼一份清单。
+
+    tag_name 就是版本号，附件默认取 LanternLauncher.exe；API 不返回 sha1，
+    所以只靠版本号 + 文件大小校验（下载完再比对一次大小）。
+    """
+    data = net.get_json(API_LATEST_URL, timeout=6, retries=1)
+    if not isinstance(data, dict):
+        raise ValueError("返回格式不对")
+    tag = str(data.get("tag_name") or "").strip()
+    if not tag:
+        raise ValueError(str(data.get("message") or "缺少 tag_name")[:120])
+    assets = data.get("assets") or []
+    pick: dict = {}
+    for a in assets:                       # 先按约定的附件名精确匹配
+        if str(a.get("name") or "").lower() == RELEASE_ASSET_NAME.lower():
+            pick = a
+            break
+    if not pick:                           # 附件改了名也不至于完全升不了
+        for a in assets:
+            if str(a.get("name") or "").lower().endswith(".exe"):
+                pick = a
+                break
+    url = str(pick.get("browser_download_url") or "")
+    if not url:
+        raise ValueError(f"Release {tag} 里没有 exe 附件")
+    return {
+        "version": tag.lstrip("vV"),
+        "published": str(data.get("published_at") or "")[:10],
+        "notes": str(data.get("body") or "").strip()[:1500],
+        "files": {
+            platform_key(): {
+                "url": url,
+                "size": int(pick.get("size") or 0),
+                "sha1": "",
+            }
+        },
+    }
+
+
+def _commit(src: str, manifest: dict, log) -> dict:
+    """把一份清单落到 state 上，并返回快照。"""
+    latest = str(manifest.get("version") or "").strip()
+    if not latest:
+        raise ValueError("清单里缺少 version")
+    entry = _pick_file(manifest)
+    has_new = version_tuple(latest) > version_tuple(VERSION)
+    try:
+        mandatory = has_new and version_tuple(VERSION) < version_tuple(
+            manifest.get("min_version") or "0")
+    except Exception:
+        mandatory = False
+    with _lock:
+        state.update(
+            latest=latest,
+            has_update=has_new,
+            mandatory=mandatory,
+            notes=str(manifest.get("notes") or ""),
+            published=str(manifest.get("published") or ""),
+            size=int(entry.get("size") or 0),
+            sha1=str(entry.get("sha1") or ""),
+            url=str(entry.get("url") or ""),
+            source=_label(src),
+            checked_at=time.time(),
+            error="",
+        )
+    log(f"发现新版本 {latest}（当前 {VERSION}）" if has_new
+        else f"已是最新版本 {VERSION}")
+    _save_cache()
+    return snapshot()
+
+
 def check(force: bool = False, emit: Optional[Callable[[str], None]] = None) -> dict:
     """检查是否有新版本。失败不抛异常，结果写在 state['error'] 里。"""
     log = emit or (lambda *_: None)
@@ -197,49 +276,19 @@ def check(force: bool = False, emit: Optional[Callable[[str], None]] = None) -> 
         for src in _sources():
             try:
                 manifest = _read_manifest(src)
+                return _commit(src, manifest, log)
             except Exception as e:  # noqa: BLE001 - 挨个源试
                 errors.append(f"{_label(src)}: {e}")
                 continue
-            entry = _pick_file(manifest)
-            latest = str(manifest.get("version") or "").strip()
-            if not latest:
-                errors.append(f"{_label(src)}: 缺少 version")
-                continue
-            has_new = version_tuple(latest) > version_tuple(VERSION)
-            mandatory = False
-            try:
-                mandatory = has_new and version_tuple(VERSION) < version_tuple(
-                    manifest.get("min_version") or "0")
-            except Exception:
-                mandatory = False
-            with _lock:
-                state.update(
-                    latest=latest,
-                    has_update=has_new,
-                    mandatory=mandatory,
-                    notes=str(manifest.get("notes") or ""),
-                    published=str(manifest.get("published") or ""),
-                    size=int(entry.get("size") or 0),
-                    sha1=str(entry.get("sha1") or ""),
-                    url=str(entry.get("url") or ""),
-                    source=_label(src),
-                    checked_at=time.time(),
-                    error="",
-                )
-            if has_new:
-                log(f"发现新版本 {latest}（当前 {VERSION}）")
-            else:
-                log(f"已是最新版本 {VERSION}")
-            _save_cache()
-            return snapshot()
 
-        # 所有源都失败：区分「没配置」和「连不上」
-        sources = _sources()
-        has_remote = any(s.startswith(("http://", "https://")) for s in sources)
-        if not has_remote and all(not Path(s).exists() for s in sources):
-            msg = "未配置更新源（可在设置里填写更新清单地址）"
-        else:
-            msg = "；".join(errors)[:300]
+        # 清单全都拿不到（常见于发版时只传了 exe）：退一步问 GitHub API
+        try:
+            return _commit(API_LABEL, _manifest_from_release(), log)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{API_LABEL}: {e}")
+
+        # 连 API 兜底都失败了：把每个源的失败原因都摊开
+        msg = "；".join(errors)[:300] or "检查更新失败（网络不通）"
         with _lock:
             state.update(checked_at=time.time(), error=msg, checking=False)
         return snapshot()

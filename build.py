@@ -131,9 +131,9 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "「模组」页新增在线搜索下载：直接搜 Modrinth 的模组 / 光影 / 资源包，"
-                 "自动按当前实例的 MC 版本和加载器过滤，选好文件版本一键下载进目录；"
-                 "数据源与整合包共用（自动 / 官方 / 国内镜像可切，可填加速代理）。",
+        "notes": "自动更新不再依赖 update.json：发版时忘了传清单也能通过 GitHub API "
+                 "拿到最新版本号和 exe 直链，老客户端不会被卡在旧版本；"
+                 "清单存在时依旧优先用清单（可校验 sha1）。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {
@@ -175,9 +175,10 @@ def main() -> None:
     print(f"  版本    {VERSION} (build {BUILD})")
     print(f"  耗时    {time.time() - t0:.0f}s")
     print("\n分发：")
-    print(f"  1) 到 {REPO_URL}/releases/new 建 Release，Tag 填 v{VERSION}")
-    print("  2) 上传 dist/LanternLauncher.exe 和 dist/update.json 两个附件")
-    print("  3) 发布后，所有客户端（update_url 指向 latest/download/update.json）即可自动更新")
+    print(f"  1) 到 {REPO_URL}/releases/new 建 Release，Tag 填 v{VERSION}（tag 千万别带多余的点）")
+    print("  2) 上传 dist/LanternLauncher.exe 一个附件就够")
+    print("     update.json 可选：传了就能做 sha1 校验，不传客户端会自己查 GitHub API 拿版本号")
+    print(f"  3) 发布后，所有客户端（最迟下次启动）即可自动更新到 {VERSION}")
 
 
 if __name__ == "__main__":

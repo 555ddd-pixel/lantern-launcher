@@ -1,13 +1,13 @@
 {
-  "version": "1.8.0",
+  "version": "1.8.1",
   "published": "2026-11-01",
-  "notes": "「模组」页新增在线搜索下载：直接搜 Modrinth 的模组 / 光影 / 资源包，自动按当前实例的 MC 版本和加载器过滤，选好文件版本一键下载进目录；数据源与整合包共用（自动 / 官方 / 国内镜像可切，可填加速代理）。",
+  "notes": "自动更新不再依赖 update.json：发版时忘了传清单也能通过 GitHub API 拿到最新版本号和 exe 直链，老客户端不会被卡在旧版本；清单存在时依旧优先用清单（可校验 sha1）。",
   "min_version": "1.0.0",
   "files": {
     "windows-x64": {
-      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.8.0/LanternLauncher.exe",
-      "size": 20292380,
-      "sha1": "128eea6492f0c3d5b299271c8c281d90ff9ec10a"
+      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.8.1/LanternLauncher.exe",
+      "size": 20292849,
+      "sha1": "4a53e36c96f0bfc9d49f34e6d10bac4268818002"
     }
   }
 }

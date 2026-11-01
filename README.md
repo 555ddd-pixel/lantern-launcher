@@ -105,7 +105,8 @@ PCL2（Plain Craft Launcher 2，作者 龙腾猫跃）是我这次调研的参�
 启动器可以更新自己，整条链路是：**检查清单 → 后台下载（SHA1 校验）→ 改名交换替换 exe → 自动重启新版本**。
 
 - 更新清单是一个 JSON（`update.json`），默认按顺序找：设置里的「更新清单地址」→ exe 同目录的 `update.json`
-- 「更新清单地址」默认指向 `https://github.com/555ddd-pixel/lantern-launcher/releases/latest/download/update.json`，所以装过一次之后，只要仓库发了新 Release，客户端就会自己升级；取不到（离线/被墙）时自动回退到本地 `update.json`，不影响使用
+- 「更新清单地址」默认指向 `https://github.com/555ddd-pixel/lantern-launcher/releases/latest/download/update.json`，所以装过一次之后，只要仓库发了新 Release，客户端就会自己升级
+- **清单拿不到也能升级**：上面几个来源都失败时，自动退一步请求 GitHub API 的 `releases/latest`，把 `tag_name` 当版本号、`LanternLauncher.exe` 当下载地址。所以发版时只传 exe、忘了传 `update.json` 也不会把老用户卡住（区别只是这条路径没有 SHA1，仅校验文件大小）
 - 清单里写新版本号、发布说明和各平台下载地址；发现更高版本号就提示更新
 - 替换原理：Windows 允许重命名运行中的 exe，直接「旧 exe → .old 备份、新 exe 就位、启动新进程」，无需用户手动操作；失败时自动退回批处理脚本方案
 - 界面上有三处提示：左侧栏更新徽标、主页顶部横幅（带下载进度条）、设置页的「启动器更新」面板
@@ -123,7 +124,9 @@ python build.py --clean    # 清掉旧产物后重新打包
 - 双击 `LanternLauncher.exe` 直接弹出**软件窗口**（原生窗口，有标题栏/托盘，不是浏览器标签页）；再次双击不会起第二个实例，而是把已运行的窗口切到前台
 - 窗口实现：默认用 pywebview + WebView2（Windows 10/11 自带运行时）；缺依赖时自动降级为 Edge/Chrome 内核的应用窗口（同样无地址栏），再不行就是普通浏览器页面
 - 「窗口与托盘」设置：关闭窗口时最小化到托盘（点托盘图标恢复）、退出启动器
-- **发布更新的方法**：改 `core/version.py` 里的 `VERSION` → `python build.py` → 到 [Releases](https://github.com/555ddd-pixel/lantern-launcher/releases/new) 建一个 `v1.3.1` 这样的 Tag，把 `dist/LanternLauncher.exe` 和 `dist/update.json` **两个都**作为附件上传 → 发布。老用户的启动器下一次检查就会自动完成升级（`build.py` 已把清单里的下载地址写成对应 Release 的绝对地址）
+- **发布更新的方法**：改 `core/version.py` 里的 `VERSION` → `python build.py` → 到 [Releases](https://github.com/555ddd-pixel/lantern-launcher/releases/new) 建一个 `v1.9.0` 这样的 Tag（**Tag 要带 `v`，版本号本身别多加逗号/点**），上传 `dist/LanternLauncher.exe` 即可。老用户的启动器下一次检查就会自动完成升级
+  - 顺手把 `dist/update.json` 也传上去更好：清单优先，能带发布说明、最小版本要求和 SHA1 校验
+  - 只传 exe 时，客户端走 GitHub API 兜底，同样能升，只是少了 SHA1
 - 只想做离线/U 盘分发时用 `python build.py --local-url`，清单里的地址会退回相对路径（exe 和 update.json 放同一个文件夹即可）
 - 命令行：`--browser`（用默认浏览器打开）、`--headless`（只起服务）、`--port 9000`、`--version`
 
