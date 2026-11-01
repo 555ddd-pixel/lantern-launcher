@@ -268,9 +268,10 @@ def start_probe() -> None:
 
 
 def search(query: str = "", loader: str = "", mc: str = "",
-           index: str = "relevance", limit: int = 24, offset: int = 0) -> dict:
-    """实时搜索整合包。facets 里限定 project_type:modpack。"""
-    facets = [["project_type:modpack"]]
+           index: str = "relevance", limit: int = 24, offset: int = 0,
+           project_type: str = "modpack") -> dict:
+    """实时搜索 Modrinth 项目。project_type 可为 modpack / mod / shader / resourcepack。"""
+    facets = [[f"project_type:{project_type}"]]
     if loader:
         facets.append([f"categories:{loader.lower()}"])
     if mc:
@@ -331,6 +332,32 @@ def project_versions(project: str, mc: str = "", loader: str = "") -> list[dict]
             },
         })
     return out
+
+
+def version_detail(file_version: str) -> dict:
+    """单个文件版本的详情（下载模组 / 光影时用来取主文件和哈希）。"""
+    v = _api_get(f"/version/{file_version}")
+    if not isinstance(v, dict):
+        raise RuntimeError("读不到这个文件版本的详情")
+    files = v.get("files") or []
+    primary = next((f for f in files if f.get("primary")), files[0] if files else {})
+    if not primary.get("url"):
+        raise RuntimeError("这个版本没有可下载的文件")
+    return {
+        "id": v.get("id") or file_version,
+        "name": v.get("name") or v.get("version_number") or "",
+        "number": v.get("version_number") or "",
+        "game_versions": v.get("game_versions") or [],
+        "loaders": v.get("loaders") or [],
+        "date": (v.get("date_published") or "")[:10],
+        "project": v.get("project_id") or "",
+        "file": {
+            "url": primary.get("url") or "",
+            "name": primary.get("filename") or "",
+            "size": primary.get("size") or 0,
+            "sha1": ((primary.get("hashes") or {}).get("sha1") or ""),
+        },
+    }
 
 
 # ---------------------------------------------------------------- 解析整合包

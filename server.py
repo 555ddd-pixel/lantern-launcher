@@ -530,6 +530,55 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error(f"读取版本失败：{e}")
             return self._json({"ok": True, "versions": rows})
 
+        if path == "/api/mods/search":
+            # 在线搜模组 / 光影 / 资源包：传 version 时自动按该实例的 MC 版本 + 加载器过滤
+            vid = (qs.get("version", [""])[0] or "").strip()
+            area = (qs.get("area", ["mods"])[0] or "mods").strip()
+            mc = (qs.get("mc", [""])[0] or "").strip()
+            loader = (qs.get("loader", [""])[0] or "").strip()
+            if vid:
+                mc = mc or content.mc_version(vid)
+                loader = loader or content.detect_loader(vid)
+            if loader in ("vanilla", "none", "liteloader"):
+                loader = ""
+            query = (qs.get("q", [""])[0] or "").strip()
+            index = (qs.get("index", ["relevance"])[0] or "relevance")
+            if index not in ("relevance", "downloads", "follows", "newest", "updated"):
+                index = "relevance"
+            try:
+                offset = max(0, int(qs.get("offset", ["0"])[0]))
+            except ValueError:
+                offset = 0
+            try:
+                limit = max(1, min(40, int(qs.get("limit", ["20"])[0])))
+            except ValueError:
+                limit = 20
+            try:
+                return self._json({"ok": True, **content.search_projects(
+                    query, area=area, mc=mc, loader=loader,
+                    index=index if query else "downloads",
+                    limit=limit, offset=offset)})
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"搜索失败：{e}")
+
+        if path == "/api/mods/versions":
+            project = (qs.get("project", [""])[0] or "").strip()
+            if not project:
+                return self._error("缺少 project")
+            area = (qs.get("area", ["mods"])[0] or "mods").strip()
+            vid = (qs.get("version", [""])[0] or "").strip()
+            mc = (qs.get("mc", [""])[0] or "").strip() or (content.mc_version(vid) if vid else "")
+            loader = (qs.get("loader", [""])[0] or "").strip()
+            if not loader and vid:
+                loader = content.detect_loader(vid)
+            if loader in ("vanilla", "none", "liteloader"):
+                loader = ""
+            try:
+                return self._json({"ok": True, **content.project_versions(
+                    project, area=area, mc=mc, loader=loader)})
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"读取版本失败：{e}")
+
         if path == "/api/link/state":
             try:
                 with_public = (qs.get("public", ["1"])[0] or "1") != "0"
@@ -723,6 +772,28 @@ class Handler(BaseHTTPRequestHandler):
 
             if task.start_pack(title, work):
                 return self._json({"ok": True, "message": f"开始安装《{title}》"})
+            return self._error("已有任务在进行中")
+
+        if path == "/api/mods/install":
+            vid = (body.get("version") or "").strip()
+            file_version = (body.get("file_version") or "").strip()
+            area = (body.get("area") or "mods").strip()
+            title = (body.get("title") or "文件").strip()
+            if not vid or not file_version:
+                return self._error("缺少 version / file_version")
+            if not (config.versions_dir / vid).exists():
+                return self._error(f"版本 {vid} 还没安装")
+            if area not in content.AREAS:
+                area = "mods"
+            if task.busy:
+                return self._error("已有任务在进行中")
+
+            def work(cancel):
+                return content.install_project(vid, file_version, area,
+                                               emit=task._log, progress=task._progress)
+
+            if task.start_pack(title, work, kind="mod"):
+                return self._json({"ok": True, "message": f"开始下载 {title}"})
             return self._error("已有任务在进行中")
 
         if path == "/api/content/toggle":

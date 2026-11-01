@@ -21,7 +21,7 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-from . import net
+from . import modpack, net
 from .config import CACHE_DIR, config
 from .meta import version_dir
 from .modpack import instance_game_dir, instances_dir, INSTANCE_FILE
@@ -119,6 +119,23 @@ def detect_loader(version_id: str) -> str:
     if "liteloader" in text:
         return "liteloader"
     return "vanilla"
+
+
+def mc_version(version_id: str) -> str:
+    """顺着 inheritsFrom 往上找原版版本号（fabric-loader-0.16-1.20.1 → 1.20.1）。"""
+    cur = version_id or ""
+    for _ in range(8):
+        if re.fullmatch(r"\d+\.\d+(\.\d+)?", cur):
+            return cur
+        p = version_dir(cur) / f"{cur}.json"
+        if not p.exists():
+            return ""
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return ""
+        cur = str(raw.get("inheritsFrom") or "")
+    return ""
 
 
 # ---------------------------------------------------------------- 模组信息
@@ -276,6 +293,7 @@ def state(version_id: str) -> dict:
         "isolated": isolated,
         "loader": loader,
         "loader_label": LOADER_LABEL.get(loader, loader or "原版"),
+        "mc_version": mc_version(version_id),
         "areas": {},
     }
     for area in AREAS:
@@ -600,3 +618,76 @@ def loader_summary(mc: str) -> dict:
     for t in threads:
         t.join(22)
     return {"mc": mc, "loaders": out, "order": LOADER_ORDER}
+
+
+# ---------------------------------------------------------------- 在线搜索 / 下载
+#
+# 和整合包共用一套 Modrinth 通道（自动换官方 / 国内镜像、可走加速代理），
+# 只是把 project_type 换成 mod / shader / resourcepack。
+
+PROJECT_TYPES = {"mods": "mod", "shaderpacks": "shader", "resourcepacks": "resourcepack"}
+
+# 光影 / 资源包不按加载器筛：Modrinth 上 iris 与 optifine 是两套标签，
+# 硬筛会漏掉一半可用的包，交给 MC 版本过滤更准。
+LOADER_FREE_AREAS = ("shaderpacks", "resourcepacks")
+
+
+def search_projects(query: str = "", area: str = "mods", mc: str = "", loader: str = "",
+                    index: str = "relevance", limit: int = 20, offset: int = 0) -> dict:
+    """在线搜索模组 / 光影 / 资源包（走整合包同一套换源逻辑）。"""
+    area = area if area in AREAS else "mods"
+    ptype = PROJECT_TYPES[area]
+    facet_loader = "" if area in LOADER_FREE_AREAS else (loader or "")
+    data = modpack.search(query, loader=facet_loader, mc=mc, index=index,
+                          limit=max(1, min(40, int(limit))), offset=max(0, int(offset)),
+                          project_type=ptype)
+    data["area"] = area
+    data["type"] = ptype
+    data["source"] = modpack.source_mode()
+    data["loader"] = facet_loader
+    return data
+
+
+def project_versions(project: str, area: str = "mods", mc: str = "",
+                     loader: str = "") -> dict:
+    """某个项目的文件版本列表（按当前实例的 MC 版本 + 加载器过滤）。"""
+    area = area if area in AREAS else "mods"
+    ld = "" if area in LOADER_FREE_AREAS else (loader or "")
+    rows = modpack.project_versions(project, mc=mc, loader=ld)
+    return {"project": project, "area": area, "versions": rows, "total": len(rows)}
+
+
+def install_project(version_id: str, file_version: str, area: str = "mods",
+                    emit=None, progress=None) -> dict:
+    """从 Modrinth 下载一个文件版本，放进当前版本的模组 / 光影 / 资源包目录。"""
+    log = emit or (lambda *_: None)
+    area = area if area in AREAS else "mods"
+    info = modpack.version_detail(file_version)
+    f = info["file"]
+    if not f.get("url"):
+        raise RuntimeError("这个版本没有可下载的文件")
+    name = f.get("name") or f"{info.get('project') or 'download'}.jar"
+    size = int(f.get("size") or 0)
+    target = CACHE_DIR / "downloads" / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    log(f"下载 {name}（{size / 1048576:.1f} MB）…")
+
+    meter = net.ProgressMeter(total_bytes=size, total_files=1)
+    meter.set_current(name)
+
+    def tick(n: int) -> None:
+        meter.add_bytes(n)
+        if progress:
+            progress(meter.snapshot())
+
+    modpack.download(f["url"], target, expected_sha1=f.get("sha1") or None,
+                     expected_size=size or None,
+                     progress=tick if progress else None)
+    if progress:
+        meter.file_done()
+        progress(meter.snapshot())
+    result = place(version_id, target, area, filename=name)
+    log(f"已放入 {Path(result['dir']).name}/：{result['file']}")
+    return {"area": result["area"], "file": result["file"], "dir": result["dir"],
+            "title": result.get("title") or name, "version": info.get("number") or "",
+            "state": state(version_id)}

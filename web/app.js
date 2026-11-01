@@ -541,7 +541,13 @@ async function importFiles(files, kind) {
 
 $("#modVersion").addEventListener("change", (e) => {
   state.modsVersion = e.target.value;
-  refreshMods();
+  refreshMods().then(() => {
+    if (modShopOpen()) {
+      modShop.vid = modVersion();
+      renderModShopHead();
+      searchModShop(true);
+    }
+  });
 });
 
 $("#modTabs").addEventListener("click", (e) => {
@@ -550,6 +556,12 @@ $("#modTabs").addEventListener("click", (e) => {
   state.modsArea = tab.dataset.area;
   $$("#modTabs .tab").forEach((t) => t.classList.toggle("active", t === tab));
   renderModList(state.modsData);
+  if (modShopOpen()) {
+    modShop.area = state.modsArea;
+    $("#modShopArea").value = modShop.area;
+    renderModShopHead();
+    searchModShop(true);
+  }
 });
 
 $("#modRefresh").addEventListener("click", () => {
@@ -566,6 +578,183 @@ $("#modImport").addEventListener("click", () => $("#modFile").click());
 $("#shaderImport").addEventListener("click", () => $("#shaderFile").click());
 $("#modFile").addEventListener("change", (e) => importFiles(e.target.files, "mods"));
 $("#shaderFile").addEventListener("change", (e) => importFiles(e.target.files, "auto"));
+
+/* ---------------- 在线搜索下载（模组 / 光影 / 资源包） ---------------- */
+
+const MOD_SHOP_AREAS = { mods: "模组", shaderpacks: "光影", resourcepacks: "资源包" };
+const modShop = {
+  vid: "", q: "", area: "mods", offset: 0, hits: [], total: 0,
+  loading: false, timer: null,
+};
+
+function modShopOpen() {
+  return $("#modShopModal").classList.contains("show");
+}
+
+function renderModShopHead() {
+  const d = state.modsData || {};
+  const mc = d.mc_version || "";
+  const loader = d.loader || "vanilla";
+  const label = d.loader_label || LOADER_LABEL[loader] || loader;
+  $("#modShopFor").textContent = modShop.vid
+    ? `· ${modShop.vid}${mc ? "（MC " + mc + "）" : ""}`
+    : "";
+  const area = modShop.area;
+  const hint = $("#modShopHint");
+  if (area === "mods" && loader === "vanilla") {
+    hint.textContent = "这个版本没装加载器：模组装上也加载不了。先去「下载」页给它装 Fabric / Forge / NeoForge。";
+    hint.style.color = "var(--err)";
+  } else if (area === "shaderpacks") {
+    hint.textContent = `按 MC ${mc || "任意版本"} 筛选光影包；游戏内需要 Iris（Fabric/Quilt）或 OptiFine（Forge）。`;
+    hint.style.color = "";
+  } else if (area === "mods") {
+    hint.textContent = `只显示兼容 MC ${mc || "任意版本"} + ${label} 的模组。`;
+    hint.style.color = "";
+  } else {
+    hint.textContent = `按 MC ${mc || "任意版本"} 筛选资源包。`;
+    hint.style.color = "";
+  }
+}
+
+async function openModShop() {
+  const vid = modVersion();
+  if (!vid) { toast("先选一个已安装的版本", "err"); return; }
+  if (!state.modsData) await refreshMods();
+  modShop.vid = vid;
+  modShop.area = state.modsArea;
+  modShop.q = $("#modShopQuery").value.trim();
+  $("#modShopArea").value = modShop.area;
+  $("#modShopSource").value = (state.config && state.config.pack_source) || "auto";
+  renderModShopHead();
+  $("#modShopModal").classList.add("show");
+  searchModShop(true);
+}
+
+async function searchModShop(reset) {
+  if (modShop.loading) return;
+  if (!modShop.vid) return;
+  modShop.loading = true;
+  if (reset) { modShop.offset = 0; modShop.hits = []; }
+  const box = $("#modShopList");
+  if (reset) box.innerHTML = '<div class="empty">正在搜索…</div>';
+  try {
+    const qs = new URLSearchParams({
+      version: modShop.vid, area: modShop.area, q: modShop.q,
+      offset: String(modShop.offset), limit: "20",
+    });
+    const data = await api("/api/mods/search?" + qs);
+    modShop.total = data.total || 0;
+    modShop.hits = reset ? (data.hits || []) : modShop.hits.concat(data.hits || []);
+    renderModShop();
+  } catch (e) {
+    box.innerHTML = `<div class="empty">搜索失败：${esc(e.message)}<br><span class="small">国内网络连不上 Modrinth？把上面切到「国内镜像」再试，或在设置里填加速代理。</span></div>`;
+    $("#modShopCount").textContent = "";
+    $("#modShopMore").hidden = true;
+  } finally {
+    modShop.loading = false;
+  }
+}
+
+function renderModShop() {
+  const box = $("#modShopList");
+  if (!modShop.hits.length) {
+    box.innerHTML = `<div class="empty">没有找到匹配的${MOD_SHOP_AREAS[modShop.area]}，换个关键词试试。</div>`;
+    $("#modShopCount").textContent = "0 个结果";
+    $("#modShopMore").hidden = true;
+    return;
+  }
+  box.innerHTML = modShop.hits.map((h, i) => `
+    <div class="shop-row">
+      <div class="pack-icon">${h.icon ? `<img src="${esc(h.icon)}" data-alt="${esc(h.icon_mirror || "")}" onerror="if(this.dataset.alt){this.onerror=null;this.src=this.dataset.alt}" alt="" loading="lazy" referrerpolicy="no-referrer">` : "📦"}</div>
+      <div class="shop-info">
+        <div class="shop-name">
+          <strong title="${esc(h.title)}">${esc(h.title)}</strong>
+          ${h.author ? `<span class="mod-ver">${esc(h.author)}</span>` : ""}
+        </div>
+        <div class="shop-desc" title="${esc(h.description || "")}">${esc(h.description || "")}</div>
+        <div class="mod-sub">
+          <span>↓ ${fmtNum(h.downloads)}</span>
+          ${(h.categories || []).slice(0, 3).map((c) => `<span class="pill">${esc(c)}</span>`).join("")}
+        </div>
+      </div>
+      <button class="btn btn-primary btn-mini" data-buy="${i}">下载</button>
+    </div>`).join("");
+  box.querySelectorAll("[data-buy]").forEach((b) => {
+    b.addEventListener("click", () => openModVersions(modShop.hits[Number(b.dataset.buy)]));
+  });
+  const shown = modShop.hits.length;
+  $("#modShopCount").textContent = modShop.total > shown
+    ? `共 ${modShop.total} 个，已显示 ${shown} 个`
+    : `共 ${shown} 个结果`;
+  $("#modShopMore").hidden = shown >= modShop.total;
+}
+
+function openModVersions(hit) {
+  if (!hit) return;
+  const area = modShop.area;
+  const d = state.modsData || {};
+  const mc = d.mc_version || "";
+  const only = area === "mods" ? `MC ${mc || "任意版本"} + ${d.loader_label || d.loader || "原版"}` : `MC ${mc || "任意版本"}`;
+  openVerPicker({
+    title: hit.title,
+    sub: `下载为${MOD_SHOP_AREAS[area]}，只列出兼容 ${only} 的文件。`,
+    empty: area === "mods"
+      ? `这个项目没有兼容 ${only} 的文件。可以换一个投影，或先给该版本装对应加载器。`
+      : `这个项目没有兼容 MC ${mc || "当前版本"} 的文件。`,
+    load: async () => {
+      const qs = new URLSearchParams({ project: hit.slug || hit.id, area, version: modShop.vid });
+      const data = await api("/api/mods/versions?" + qs);
+      return data.versions || [];
+    },
+    onPick: (v) => installMod(hit, v, area),
+  });
+}
+
+async function installMod(hit, ver, area) {
+  const vid = modShop.vid || modVersion();
+  if (!vid) { toast("先选一个已安装的版本", "err"); return; }
+  try {
+    $("#packModal").classList.remove("show");
+    $("#taskbar").classList.add("show");
+    $("#taskTitle").textContent = "下载 " + hit.title;
+    $("#taskSub").textContent = ver.number || ver.name || "";
+    $("#taskFill").style.width = "2%";
+    $("#taskPercent").textContent = "0%";
+    await api("/api/mods/install", {
+      method: "POST",
+      body: JSON.stringify({ version: vid, file_version: ver.id, area, title: hit.title }),
+    });
+    toast(`开始下载《${hit.title}》，装好后会自动出现在列表里`, "ok");
+  } catch (e) {
+    toast(e.message, "err");
+    $("#taskbar").classList.remove("show");
+  }
+}
+
+$("#modOnline").addEventListener("click", () => openModShop().catch((e) => toast(e.message, "err")));
+$("#modShopClose").addEventListener("click", () => $("#modShopModal").classList.remove("show"));
+$("#modShopModal").addEventListener("click", (e) => {
+  if (e.target === $("#modShopModal")) $("#modShopModal").classList.remove("show");
+});
+
+$("#modShopQuery").addEventListener("input", (e) => {
+  modShop.q = e.target.value.trim();
+  if (modShop.timer) clearTimeout(modShop.timer);
+  modShop.timer = setTimeout(() => searchModShop(true), 400);
+});
+
+$("#modShopArea").addEventListener("change", (e) => {
+  modShop.area = e.target.value;
+  renderModShopHead();
+  searchModShop(true);
+});
+
+$("#modShopSource").addEventListener("change", (e) => setPackSource(e.target.value));
+
+$("#modShopMore").addEventListener("click", () => {
+  modShop.offset = modShop.hits.length;
+  searchModShop(false);
+});
 
 /* ---------------- 安装 / 启动 ---------------- */
 
@@ -785,8 +974,9 @@ function applyStatus(data) {
     const pct = Math.round((p.ratio || 0) * 100);
     $("#taskTitle").textContent = t.kind === "java" ? "下载 Java 运行时"
       : t.kind === "modpack" ? `安装整合包 ${t.version || ""}`
-        : t.kind === "link" ? `下载 ${t.version || "组件"}`
-          : t.kind === "login" ? "微软账号登录" : `下载 ${t.version}`;
+        : t.kind === "mod" ? `下载 ${t.version || "文件"}`
+          : t.kind === "link" ? `下载 ${t.version || "组件"}`
+            : t.kind === "login" ? "微软账号登录" : `下载 ${t.version}`;
     $("#taskPercent").textContent = pct + "%";
     $("#taskFill").style.width = Math.max(2, pct) + "%";
     $("#taskSub").textContent = [
@@ -804,6 +994,7 @@ function applyStatus(data) {
       const done = (t.result && t.result.version) || t.version || "";
       const loader = (t.result && t.result.loader) || "vanilla";
       toast(t.kind === "modpack" ? "整合包安装完成"
+        : t.kind === "mod" ? `已装好 ${(t.result && (t.result.title || t.result.file)) || t.version || "文件"}`
         : loader !== "vanilla" ? `已安装 ${done}（${LOADER_LABEL[loader] || loader}）`
         : "下载完成", "ok");
       if (t.result && t.result.note) toast(t.result.note, "err");
@@ -1039,6 +1230,7 @@ function fillSettings() {
   $("#setPackSource").value = c.pack_source || "auto";
   $("#setNetProxy").value = c.net_proxy || "";
   $("#packSource").value = c.pack_source || "auto";
+  $("#modShopSource").value = c.pack_source || "auto";
 }
 
 $("#saveSettings").addEventListener("click", async () => {
@@ -1083,11 +1275,14 @@ async function setPackSource(value, opts = {}) {
     state.config = config;
     $("#packSource").value = config.pack_source || "auto";
     $("#setPackSource").value = config.pack_source || "auto";
+    $("#modShopSource").value = config.pack_source || "auto";
     if (!opts.silent) {
-      toast("整合包源：" + ({ auto: "自动", official: "官方", mirror: "国内镜像" }[value] || value), "ok");
+      toast("整合包 / 模组源：" + ({ auto: "自动", official: "官方", mirror: "国内镜像" }[value] || value), "ok");
     }
     packState.loaded = false;
-    searchPacks(true);
+    // 只有在整合包页（或已经搜过）时才重搜整合包，避免在模组页白跑一次请求
+    if (isPage("modpack") || packState.hits.length) searchPacks(true);
+    if (modShopOpen()) searchModShop(true);
   } catch (e) { toast(e.message, "err"); }
 }
 
@@ -1403,35 +1598,53 @@ function renderPacks() {
     : `共 ${packState.total} 个结果`;
 }
 
-async function openPackVersions(hit) {
-  if (!hit) return;
-  packState.project = hit;
-  $("#packModalTitle").textContent = hit.title;
-  $("#packModalSub").textContent = hit.description || "";
+let verPick = null;
+
+/** 通用「选文件版本」弹层：整合包 / 模组 / 光影 都复用这一个。 */
+function openVerPicker({ title, sub, empty, load, onPick }) {
+  verPick = { onPick };
+  $("#packModalTitle").textContent = title || "选择版本";
+  $("#packModalSub").textContent = sub || "";
   $("#packVerList").innerHTML = '<div class="empty">正在读取版本列表…</div>';
   $("#packModal").classList.add("show");
-  try {
-    const qs = new URLSearchParams({ project: hit.slug || hit.id, loader: packState.loader });
-    const data = await api("/api/modpack/versions?" + qs);
-    const rows = data.versions || [];
-    if (!rows.length) {
-      $("#packVerList").innerHTML = '<div class="empty">该筛选下没有可用版本，换个 loader 试试。</div>';
+  load().then((rows) => {
+    if (!rows || !rows.length) {
+      $("#packVerList").innerHTML = `<div class="empty">${esc(empty || "没有可用版本，换个筛选试试。")}</div>`;
       return;
     }
-    $("#packVerList").innerHTML = rows.slice(0, 60).map((v) => `
+    $("#packVerList").innerHTML = rows.slice(0, 60).map((v, i) => `
       <div class="ver-pick-row">
         <div class="ver-pick-meta">
           <strong>${esc(v.name || v.number)}</strong>
-          <span class="muted small">MC ${esc((v.game_versions || []).join(" / "))} · ${esc((v.loaders || []).join(" / "))} · ${esc(v.date)}</span>
+          <span class="muted small">MC ${esc((v.game_versions || []).join(" / "))} · ${esc((v.loaders || []).join(" / "))} · ${esc(v.date || "")}</span>
         </div>
-        <button class="btn btn-primary btn-mini" data-ver="${esc(v.id)}">安装</button>
+        <button class="btn btn-primary btn-mini" data-ver="${i}">下载</button>
       </div>`).join("");
     $("#packVerList").querySelectorAll("[data-ver]").forEach((b) => {
-      b.addEventListener("click", () => installPack(hit, b.dataset.ver));
+      b.addEventListener("click", () => {
+        const row = rows[Number(b.dataset.ver)];
+        if (row && verPick && verPick.onPick) verPick.onPick(row);
+      });
     });
-  } catch (e) {
+  }).catch((e) => {
     $("#packVerList").innerHTML = `<div class="empty">读取失败：${esc(e.message)}</div>`;
-  }
+  });
+}
+
+async function openPackVersions(hit) {
+  if (!hit) return;
+  packState.project = hit;
+  openVerPicker({
+    title: hit.title,
+    sub: hit.description || "",
+    empty: "该筛选下没有可用版本，换个 loader 试试。",
+    load: async () => {
+      const qs = new URLSearchParams({ project: hit.slug || hit.id, loader: packState.loader });
+      const data = await api("/api/modpack/versions?" + qs);
+      return data.versions || [];
+    },
+    onPick: (v) => installPack(hit, v.id),
+  });
 }
 
 async function installPack(hit, versionId) {

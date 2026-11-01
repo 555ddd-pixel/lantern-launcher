@@ -228,7 +228,8 @@
           <button class="tab" data-area="resourcepacks">资源包</button>
         </div>
         <div class="grow"></div>
-        <button class="btn btn-primary btn-mini" id="modImport">导入模组</button>
+        <button class="btn btn-primary btn-mini" id="modOnline">在线搜索下载</button>
+        <button class="btn btn-mini" id="modImport">导入模组</button>
         <button class="btn btn-mini" id="shaderImport">导入光影 / 资源包</button>
         <input type="file" id="modFile" accept=".jar" multiple hidden>
         <input type="file" id="shaderFile" accept=".zip" multiple hidden>
@@ -602,6 +603,44 @@
     <div class="ver-pick" id="packVerList"><div class="empty">读取中…</div></div>
     <div class="btn-row modal-foot">
       <button class="btn btn-ghost" id="packModalClose">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 在线搜索模组 / 光影 / 资源包 -->
+<div class="modal-mask" id="modShopModal">
+  <div class="modal modal-shop">
+    <div class="shop-head">
+      <div class="shop-head-text">
+        <h3>在线搜索下载 <span class="muted small" id="modShopFor"></span></h3>
+        <p class="muted small">来源 Modrinth，和「整合包」页共用同一条线路。国内网络搜不出东西时，把右边切到「国内镜像」。</p>
+      </div>
+      <button class="btn btn-ghost btn-mini" id="modShopClose">关闭</button>
+    </div>
+    <div class="toolbar shop-toolbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="modShopQuery" placeholder="搜索模组 / 光影 / 资源包，例如 Sodium、BSL、机械动力" autocomplete="off">
+      </div>
+      <select class="mini-select" id="modShopArea" title="搜索类型">
+        <option value="mods">模组</option>
+        <option value="shaderpacks">光影</option>
+        <option value="resourcepacks">资源包</option>
+      </select>
+      <select class="mini-select" id="modShopSource" title="数据源（与整合包页共用）">
+        <option value="auto">源：自动</option>
+        <option value="official">源：官方</option>
+        <option value="mirror">源：国内镜像</option>
+      </select>
+    </div>
+    <div class="shop-hint small" id="modShopHint"></div>
+    <div class="shop-list" id="modShopList">
+      <div class="empty">输入关键词开始搜索，留空则显示热门内容。</div>
+    </div>
+    <div class="shop-foot">
+      <span class="muted small" id="modShopCount"></span>
+      <div class="grow"></div>
+      <button class="btn btn-ghost btn-mini" id="modShopMore" hidden>加载更多</button>
     </div>
   </div>
 </div>

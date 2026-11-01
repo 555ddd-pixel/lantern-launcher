@@ -131,10 +131,9 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "新增「模组」页：按版本管理模组 / 光影 / 资源包，支持单个启停、"
-                 "一键全部启停、导入与拖拽安装（.jar / .zip）、删除进回收站；"
-                 "下载游戏时可选加载器类型（Fabric / Forge / NeoForge / Quilt）并选择版本，"
-                 "装好后自动创建独立游戏目录；加载器版本列表带国内镜像兜底。",
+        "notes": "「模组」页新增在线搜索下载：直接搜 Modrinth 的模组 / 光影 / 资源包，"
+                 "自动按当前实例的 MC 版本和加载器过滤，选好文件版本一键下载进目录；"
+                 "数据源与整合包共用（自动 / 官方 / 国内镜像可切，可填加速代理）。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {
