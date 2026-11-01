@@ -371,7 +371,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(status_payload())
         if path == "/api/ping":
             return self._json({"ok": True, "app": APP_NAME, "version": VERSION,
-                               "frozen": FROZEN, "mode": APP_MODE})
+                               "frozen": FROZEN, "mode": APP_MODE,
+                               "pid": os.getpid()})
         if path == "/api/focus":
             # 第二次双击程序时，把已经在跑的窗口拉到前台
             called = False

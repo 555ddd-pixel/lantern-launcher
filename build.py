@@ -131,9 +131,9 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "新增「整合包」页：实时搜索 Modrinth 整合包、一键安装；"
-                 "支持把 .mrpack / CurseForge .zip 直接拖进窗口导入；"
-                 "登录窗口改为「微软正版 / 离线」分支选择，设备码直接显示在弹层里。",
+        "notes": "修复：第二次启动时可能误把自己先前的后台实例当成「已在运行」，"
+                 "结果打开网页而不是软件窗口；现在改用实例记录 + 进程校验，"
+                 "只有真正开着窗口的实例才会被唤起。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {

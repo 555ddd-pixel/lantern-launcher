@@ -79,6 +79,19 @@ def _ping(port: int, timeout: float = 0.4) -> bool:
         return False
 
 
+def _note(msg: str) -> None:
+    """降级原因写进日志：窗口程序没有控制台，事后要能查。"""
+    print(msg)
+    try:
+        from .config import LOG_DIR
+
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(LOG_DIR / "window.log", "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def find_browser() -> Optional[Path]:
     """找一个支持 --app 的 Chromium 内核浏览器（WebView2 不可用时的兜底）。"""
     local = os.environ.get("LOCALAPPDATA") or ""
@@ -327,7 +340,7 @@ class DesktopApp:
         try:
             import webview
         except Exception as e:  # noqa: BLE001
-            print(f"[窗口] 缺少 pywebview（{e}），改用浏览器窗口模式")
+            _note(f"[窗口] 缺少 pywebview（{e}），改用浏览器窗口模式")
             self._run_fallback()
             return
 
@@ -350,7 +363,7 @@ class DesktopApp:
         try:
             window = webview.create_window(**kwargs)
         except Exception as e:  # noqa: BLE001
-            print(f"[窗口] 创建窗口失败（{e}），改用浏览器窗口模式")
+            _note(f"[窗口] 创建窗口失败（{e}），改用浏览器窗口模式")
             self._run_fallback()
             return
 
@@ -374,8 +387,8 @@ class DesktopApp:
                 storage_path=str(storage),
             )
         except Exception as e:  # noqa: BLE001
-            print(f"[窗口] WebView2 启动失败：{e}")
-            print("[窗口] 退回浏览器窗口模式；如需原生窗口请安装 WebView2 运行时")
+            _note(f"[窗口] WebView2 启动失败：{e}")
+            _note("[窗口] 退回浏览器窗口模式；如需原生窗口请安装 WebView2 运行时")
             if self.fallback_browser:
                 self._run_fallback()
             else:
@@ -402,7 +415,7 @@ class DesktopApp:
         self._start_tray()          # 没有原生窗口时，托盘是唯一的入口
         proc = open_app_window(url, geo["w"], geo["h"]) if self.fallback_browser else None
         if proc is not None:
-            print("[窗口] 已用浏览器内核的应用窗口打开（无地址栏）")
+            _note("[窗口] 已用浏览器内核的应用窗口打开（无地址栏）")
             try:
                 proc.wait()         # 窗口关掉 → 程序退出
                 return
@@ -411,5 +424,5 @@ class DesktopApp:
         else:
             import webbrowser
             webbrowser.open(url)
-            print("[窗口] 已在默认浏览器中打开")
+            _note("[窗口] 找不到 Chromium 内核浏览器，已在默认浏览器中打开")
         self._wait_forever()
