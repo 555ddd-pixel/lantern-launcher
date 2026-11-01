@@ -1,0 +1,25 @@
+# ---------- 运行数据（体积大，不提交） ----------
+.minecraft/
+runtime/
+build/
+.cache/
+logs/
+dist/*.exe
+
+# ---------- 本地个人配置（含本机路径，不提交） ----------
+config.json
+config.json.tmp
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---------- 编辑器 / 系统 ----------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

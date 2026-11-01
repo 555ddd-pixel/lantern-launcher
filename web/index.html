@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern Launcher · Minecraft 启动器</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏮</text></svg>">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+          <path d="M12 2v3"/><path d="M6 9h12l-1.2 10.2a2 2 0 0 1-2 1.8H9.2a2 2 0 0 1-2-1.8L6 9z"/><path d="M9.5 13.5h5"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <strong>Lantern</strong>
+        <span>Minecraft Launcher</span>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-page="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
+        <span>主页</span>
+      </button>
+      <button class="nav-item" data-page="download">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>
+        <span>下载</span>
+      </button>
+      <button class="nav-item" data-page="versions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+        <span>版本</span>
+      </button>
+      <button class="nav-item" data-page="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 14.6H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7.5l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 3.8V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.5 1.5l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+        <span>设置</span>
+      </button>
+      <button class="nav-item" data-page="logs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h11l3 3v13H5z"/><path d="M8 10h8M8 14h8"/></svg>
+        <span>日志</span>
+      </button>
+    </nav>
+
+    <div class="rail-foot">
+      <button class="update-chip" id="updateChip" hidden>
+        <span class="chip-dot"></span>
+        <span id="updateChipText">有新版本</span>
+      </button>
+      <div class="ver-line">
+        <span id="appVersion">v—</span>
+        <span class="live-dot" id="liveDot" title="实时连接：连接中"></span>
+      </div>
+      <button class="account" id="accountBtn" title="切换账号">
+        <div class="avatar" id="avatar">S</div>
+        <div class="account-meta">
+          <strong id="accountName">Steve</strong>
+          <span id="accountType">离线登录</span>
+        </div>
+      </button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="update-banner" id="updateBanner" hidden>
+      <div class="ub-icon">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V8"/><path d="M7 13l5-5 5 5"/><path d="M4 21h16"/></svg>
+      </div>
+      <div class="ub-text">
+        <strong id="ubTitle">发现新版本</strong>
+        <span id="ubNotes" class="muted small"></span>
+      </div>
+      <div class="ub-bar"><div class="ub-fill" id="ubFill"></div></div>
+      <div class="ub-actions">
+        <button class="btn btn-ghost btn-mini" id="ubLater">稍后</button>
+        <button class="btn btn-primary btn-mini" id="ubNow">立即更新</button>
+      </div>
+    </div>
+    <!-- 主页 -->
+    <section class="page active" id="page-home">
+      <div class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-body">
+          <div class="hero-kicker" id="heroKicker">准备就绪</div>
+          <h1 id="heroTitle">开始你的世界</h1>
+          <p class="hero-sub" id="heroSub">选择任意 Minecraft 版本，一键下载并启动。</p>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-lg" id="heroLaunch">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <span>启动游戏</span>
+            </button>
+            <button class="btn btn-ghost btn-lg" id="heroDownload">下载新版本</button>
+          </div>
+        </div>
+        <div class="hero-art">
+          <svg viewBox="0 0 200 200" width="200" height="200">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#f6b26b"/><stop offset="100%" stop-color="#e0772d"/>
+              </linearGradient>
+            </defs>
+            <rect x="40" y="60" width="120" height="120" rx="14" fill="url(#g1)" opacity=".9"/>
+            <rect x="60" y="40" width="120" height="120" rx="14" fill="#fff" opacity=".55"/>
+            <g stroke="#c85f22" stroke-width="3" fill="none" opacity=".55">
+              <path d="M100 88h44v44h-44z"/><path d="M100 88l10-10h44l-10 10"/><path d="M144 88l10-10v44l-10 10"/>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat"><span class="stat-label">已安装版本</span><strong id="statInstalled">0</strong></div>
+        <div class="stat"><span class="stat-label">可下载版本</span><strong id="statVersions">—</strong></div>
+        <div class="stat"><span class="stat-label">最高正式版</span><strong id="statLatest">—</strong></div>
+        <div class="stat"><span class="stat-label">分配内存</span><strong id="statMemory">—</strong></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>快捷启动</h2>
+          <button class="link" id="goVersions">管理版本 →</button>
+        </div>
+        <div class="quick-list" id="quickList">
+          <div class="empty">还没有安装任何版本，去「下载」页面挑一个吧。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 下载 -->
+    <section class="page" id="page-download">
+      <div class="page-head">
+        <div>
+          <h1>下载游戏</h1>
+          <p class="muted">全部官方版本，含快照与远古版本，源自 Mojang 版本清单。</p>
+        </div>
+        <button class="btn btn-ghost" id="refreshVersions">刷新列表</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="tabs" id="typeTabs">
+          <button class="tab active" data-type="release">正式版</button>
+          <button class="tab" data-type="snapshot">快照</button>
+          <button class="tab" data-type="old">远古版</button>
+          <button class="tab" data-type="all">全部</button>
+        </div>
+        <div class="search">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="searchInput" placeholder="搜索版本号，例如 1.20.1 / 24w14a" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="version-list" id="versionList">
+        <div class="empty">正在读取版本清单…</div>
+      </div>
+      <div class="list-foot" id="versionCount"></div>
+    </section>
+
+    <!-- 版本 -->
+    <section class="page" id="page-versions">
+      <div class="page-head">
+        <div>
+          <h1>已安装版本</h1>
+          <p class="muted">游戏目录：<span id="gameDirLabel" class="mono">—</span></p>
+        </div>
+        <button class="btn btn-ghost" id="openGameDir">打开游戏目录</button>
+      </div>
+      <div class="cards" id="localList">
+        <div class="empty">暂无已安装版本。</div>
+      </div>
+    </section>
+
+    <!-- 设置 -->
+    <section class="page" id="page-settings">
+      <div class="page-head"><div><h1>设置</h1><p class="muted">修改后立即生效，保存在程序目录下的 config.json。</p></div></div>
+
+      <div class="settings-grid">
+        <div class="panel">
+          <h2>游戏</h2>
+          <label class="field">
+            <span>游戏目录</span>
+            <input id="setGameDir" type="text" spellcheck="false">
+          </label>
+          <label class="field">
+            <span>玩家名（离线模式）</span>
+            <input id="setName" type="text" spellcheck="false">
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>最大内存 (MB)</span>
+              <input id="setMemory" type="number" min="512" step="512">
+            </label>
+            <label class="field">
+              <span>窗口尺寸</span>
+              <input id="setWindow" type="text" placeholder="854x480" spellcheck="false">
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>下载与 Java</h2>
+          <label class="field">
+            <span>下载源</span>
+            <select id="setMirror">
+              <option value="auto">自动测速（推荐）</option>
+              <option value="official">Mojang 官方</option>
+              <option value="bmclapi">BMCLAPI 镜像（国内快）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Java 路径（留空自动选择）</span>
+            <input id="setJava" type="text" spellcheck="false" placeholder="C:\Program Files\Java\jdk-21\bin\java.exe">
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>同时下载数</span>
+              <input id="setConcurrent" type="number" min="1" max="64">
+            </label>
+            <label class="field checkbox-field">
+              <span>缺少 Java 时自动下载</span>
+              <input id="setAutoJava" type="checkbox">
+            </label>
+          </div>
+          <div class="java-box" id="javaBox"></div>
+        </div>
+
+        <div class="panel">
+          <h2>高级启动参数</h2>
+          <label class="field">
+            <span>JVM 参数</span>
+            <input id="setJvmArgs" type="text" spellcheck="false" placeholder="-XX:+UseG1GC -Dfile.encoding=UTF-8">
+          </label>
+          <label class="field">
+            <span>游戏参数</span>
+            <input id="setGameArgs" type="text" spellcheck="false" placeholder="--fullscreen">
+          </label>
+        </div>
+
+        <div class="panel">
+          <h2>启动器更新</h2>
+          <p class="muted small">当前版本 <strong id="upCurrent">—</strong>　<span id="upMeta"></span></p>
+          <label class="field">
+            <span>更新清单地址（留空则读取 exe 同目录的 update.json）</span>
+            <input id="setUpdateUrl" type="text" spellcheck="false" placeholder="https://example.com/update.json">
+          </label>
+          <div class="field-row">
+            <label class="field checkbox-field">
+              <span>自动检查更新</span>
+              <input id="setAutoCheck" type="checkbox">
+            </label>
+            <label class="field checkbox-field">
+              <span>自动下载新版本</span>
+              <input id="setAutoDownload" type="checkbox">
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span>检查间隔（分钟）</span>
+              <input id="setUpdateInterval" type="number" min="5" step="5">
+            </label>
+            <label class="field checkbox-field">
+              <span>实时监听游戏新版本</span>
+              <input id="setLiveRefresh" type="checkbox">
+            </label>
+          </div>
+          <div class="up-status" id="upStatus">
+            <span class="muted small">尚未检查</span>
+          </div>
+          <div class="up-bar"><div class="up-fill" id="upFill"></div></div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="checkUpdateBtn">检查更新</button>
+            <button class="btn btn-primary" id="applyUpdateBtn" disabled>下载并重启更新</button>
+          </div>
+        </div>
+
+        <div class="panel" id="winPanel" hidden>
+          <h2>窗口与托盘</h2>
+          <p class="muted small">桌面软件行为：关闭窗口、托盘图标与退出。</p>
+          <label class="field checkbox-field">
+            <span>关闭窗口时最小化到托盘（点托盘图标重新打开）</span>
+            <input id="setCloseToTray" type="checkbox">
+          </label>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="openDataDirBtn">打开数据目录</button>
+            <button class="btn btn-ghost" id="quitAppBtn">退出启动器</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>正版登录</h2>
+          <p class="muted small">使用微软设备码登录。需要一个 Azure 应用的公共客户端 ID（自建应用，免费）。</p>
+          <label class="field">
+            <span>Azure 客户端 ID</span>
+            <input id="setMsClient" type="text" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
+          </label>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="msLoginBtn">开始登录</button>
+            <button class="btn btn-ghost" id="offlineBtn">切换为离线账号</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="save-bar">
+        <span id="saveHint" class="muted small">修改后点击保存</span>
+        <button class="btn btn-primary" id="saveSettings">保存设置</button>
+      </div>
+    </section>
+
+    <!-- 日志 -->
+    <section class="page" id="page-logs">
+      <div class="page-head">
+        <div><h1>日志</h1><p class="muted">安装进度与游戏输出，便于排查问题。</p></div>
+        <button class="btn btn-ghost" id="clearLogs">清空显示</button>
+      </div>
+      <div class="console" id="console"><span class="muted">（暂无输出）</span></div>
+      <div class="live-strip">
+        <span class="live-dot" id="liveDot2"></span>
+        <span id="liveText">实时连接中…</span>
+        <span class="muted small" id="liveEventText"></span>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 底部任务条 -->
+<div class="taskbar" id="taskbar">
+  <div class="taskbar-inner">
+    <div class="task-info">
+      <strong id="taskTitle">正在下载</strong>
+      <span id="taskSub" class="muted small"></span>
+    </div>
+    <div class="bar"><div class="bar-fill" id="taskFill"></div></div>
+    <div class="task-right">
+      <span id="taskPercent" class="mono">0%</span>
+      <button class="btn btn-mini" id="taskCancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 账号弹层 -->
+<div class="modal-mask" id="accountModal">
+  <div class="modal">
+    <h3>切换账号</h3>
+    <p class="muted small">离线账号可自定义名字；正版账号需要先在设置里填好 Azure 客户端 ID。</p>
+    <label class="field"><span>玩家名</span><input id="modalName" type="text" spellcheck="false"></label>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="modalOffline">使用离线账号</button>
+      <button class="btn btn-ghost" id="modalClose">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="/app.js"></script>
+</body>
+</html>

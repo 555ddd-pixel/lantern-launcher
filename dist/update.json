@@ -1,0 +1,13 @@
+{
+  "version": "1.2.0",
+  "published": "2026-11-01",
+  "notes": "桌面软件化：原生窗口（WebView2）+ 系统托盘 + 窗口位置记忆 + 单实例唤起；设置页新增「窗口与托盘」。",
+  "min_version": "1.0.0",
+  "files": {
+    "windows-x64": {
+      "url": "LanternLauncher.exe",
+      "size": 20184292,
+      "sha1": "4eae56f9370fd46471a2bb2bb0f24524b060c78d"
+    }
+  }
+}
