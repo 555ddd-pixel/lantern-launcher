@@ -718,13 +718,13 @@ function renderAccount() {
 
 let loginBranch = "offline";
 let loginTimer = null;
+let loginActive = false;   // 本次弹层里是否真的发起过登录（决定成功后要不要自动关弹层）
 let deviceInfo = {};
 
 function openAccountModal(branch) {
   const current = (state.config.account || {}).type;
   loginBranch = branch || (current === "microsoft" ? "ms" : "offline");
   $("#modalName").value = state.config.player_name || "Steve";
-  $("#modalMsClient").value = state.config.ms_client_id || "";
   selectBranch(loginBranch);
   $("#accountModal").classList.add("show");
   if (loginBranch === "ms") { pollDevice(); startLoginPolling(); }
@@ -752,18 +752,28 @@ $("#loginBranches").addEventListener("click", (e) => {
 function renderDevice(d) {
   deviceInfo = d || {};
   const box = $("#deviceBox");
-  if (!d || !d.status || d.status === "idle") { box.hidden = true; return; }
+  const btn = $("#modalMsLogin");
+  if (!d || !d.status || d.status === "idle") {
+    box.hidden = true;
+    btn.disabled = false;
+    btn.textContent = "开始登录";
+    return;
+  }
   box.hidden = false;
-  $("#deviceCode").textContent = d.code || "—";
   const stage = $("#deviceStage");
+  const waiting = d.status === "waiting";
   stage.className = "device-stage small " + (d.status === "ok" ? "ok" : d.status === "error" ? "err" : "muted");
   if (d.status === "ok") stage.textContent = `登录成功：${d.name}`;
   else if (d.status === "error") stage.textContent = d.error || "登录失败";
-  else stage.textContent = (d.stage || "等待授权") + (d.uri ? `（${d.uri}）` : "");
+  else stage.textContent = d.stage || "等待你在微软页面完成授权…";
+  // 只有退回默认浏览器时才需要「在浏览器中打开」这条后路
+  $("#deviceOpen").hidden = d.mode !== "browser";
+  btn.disabled = waiting;
+  btn.textContent = waiting ? "等待授权…" : "重新登录";
 }
 
 $("#deviceOpen").addEventListener("click", () => {
-  const url = deviceInfo.uri_complete || deviceInfo.uri;
+  const url = deviceInfo.uri;
   if (url) window.open(url, "_blank");
   else toast("还没有拿到登录地址，先点「开始登录」", "err");
 });
@@ -777,10 +787,14 @@ async function pollDevice() {
       state.config = config;
       fillSettings();
       renderAccount();
-      toast("已登录微软账号 " + account.name, "ok");
-      if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
-      setTimeout(closeAccountModal, 900);
+      if (loginActive) {
+        loginActive = false;
+        toast("已登录微软账号 " + account.name, "ok");
+        if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
+        setTimeout(closeAccountModal, 900);
+      }
     } else if (account && account.status === "error") {
+      loginActive = false;
       if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
     }
   } catch (e) { /* 服务忙时忽略 */ }
@@ -792,14 +806,31 @@ function startLoginPolling() {
 }
 
 $("#modalMsLogin").addEventListener("click", async () => {
-  const cid = $("#modalMsClient").value.trim();
+  const btn = $("#modalMsLogin");
+  btn.disabled = true;
+  loginActive = true;
   try {
-    await api("/api/account/microsoft", { method: "POST", body: JSON.stringify({ client_id: cid }) });
-    state.config.ms_client_id = cid;
-    toast("已发起登录，按弹层里的代码在浏览器授权", "ok");
+    const res = await api("/api/account/microsoft", { method: "POST", body: JSON.stringify({}) });
+    toast(res.mode === "window" ? "已打开微软登录页，登录后会自动完成" : "已在浏览器打开微软登录页", "ok");
     startLoginPolling();
-    setTimeout(pollDevice, 600);
-  } catch (e) { toast(e.message, "err"); }
+    setTimeout(pollDevice, 500);
+  } catch (e) {
+    loginActive = false;
+    toast(e.message, "err");
+    btn.disabled = false;
+  }
+});
+
+$("#msSubmit").addEventListener("click", async () => {
+  const text = $("#msCallback").value.trim();
+  if (!text) { toast("先把浏览器地址栏里的链接粘贴进来", "err"); return; }
+  loginActive = true;
+  try {
+    await api("/api/account/ms/code", { method: "POST", body: JSON.stringify({ text }) });
+    $("#msCallback").value = "";
+    startLoginPolling();
+    setTimeout(pollDevice, 400);
+  } catch (e) { loginActive = false; toast(e.message, "err"); }
 });
 
 $("#accountBtn").addEventListener("click", () => openAccountModal());

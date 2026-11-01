@@ -17,7 +17,7 @@ from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 from core import auth, installer, java as javamod, launch as launcher, live
-from core import link, modpack, updater
+from core import link, modpack, mslogin, updater
 from core.config import CACHE_DIR, LOG_DIR, ROOT, config
 from core.manifest import fetch_manifest, get_version_json, list_local_versions, list_versions
 from core.paths import DATA_DIR, FROZEN, RES_DIR
@@ -483,7 +483,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error(str(e))
 
         if path == "/api/login/state":
-            return self._json({"ok": True, "account": auth.device_state(),
+            return self._json({"ok": True, "account": auth.login_status(),
                                "config_account": config.data.get("account") or {}})
 
         if path == "/api/logs":
@@ -707,27 +707,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "account": acc})
 
         if path == "/api/account/microsoft":
-            cid = (body.get("client_id") or config["ms_client_id"] or "").strip()
-            if not cid:
-                return self._error("请先在设置里填写 Azure 客户端 ID")
-            config.update({"ms_client_id": cid})
-            result: dict = {}
+            # 打开微软官方登录页，授权后由后台线程抓回调自动完成登录
+            try:
+                info = mslogin.begin()
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"打开微软登录失败：{e}")
+            return self._json({"ok": True, **info})
 
-            def done(acc, err):
-                result["account"] = acc
-                result["error"] = err
-                task._update(running=False,
-                             phase="完成" if acc else "失败",
-                             error=err or "",
-                             result={"account": acc} if acc else {})
+        if path == "/api/account/ms/code":
+            text = (body.get("text") or "").strip()
+            if not text:
+                return self._error("请先粘贴授权后的链接")
+            mslogin.submit_async(text)
+            return self._json({"ok": True, "message": "正在校验链接…"})
 
-            def emit(text: str) -> None:
-                task._log(text)
-                task._update(kind="login", running=True)
-
-            task._update(kind="login", running=True, logs=[], error="", phase="等待授权")
-            auth.ms_login_async(cid, emit, done)
-            return self._json({"ok": True, "message": "已发起登录，请查看日志中的链接与代码"})
+        if path == "/api/account/ms/cancel":
+            mslogin.cancel()
+            return self._json({"ok": True})
 
         if path == "/api/version/delete":
             vid = (body.get("id") or "").strip()

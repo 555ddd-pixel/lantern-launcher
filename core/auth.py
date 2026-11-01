@@ -1,9 +1,16 @@
 # -*- coding: utf-8 -*-
-"""账号：离线登录（生成离线 UUID）与微软正版登录（设备码流程，可选）。"""
+"""账号：离线登录（生成离线 UUID）与微软正版登录（OAuth2 授权码流程）。
+
+正版登录走的是微软官方「授权码」流程：
+    授权页 → 用户登录并同意 → 跳回 oauth20_desktop.srf?code=...
+拿到授权码后再依次换 Xbox Live → XSTS → Minecraft 令牌，最后取回正版档案。
+客户端 ID 沿用 Minecraft 官方启动器的公共客户端，用户不需要自己申请 Azure 应用。
+"""
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -19,28 +26,40 @@ XBL = "https://user.auth.xboxlive.com/user/authenticate"
 XSTS = "https://xsts.auth.xboxlive.com/xsts/authorize"
 MC_LOGIN = "https://api.minecraftservices.com/authentication/login_with_xbox"
 MC_PROFILE = "https://api.minecraftservices.com/minecraft/profile"
-DEVICE_CODE = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode"
-TOKEN = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
+
+# 微软 OAuth：Minecraft 官方启动器的公共客户端（公开、无需密钥）
+CLIENT_ID = "00000000402b5328"
+AUTHORIZE = "https://login.live.com/oauth20_authorize.srf"
+REDIRECT = "https://login.live.com/oauth20_desktop.srf"
+MS_TOKEN = "https://login.live.com/oauth20_token.srf"
 SCOPE = "XboxLive.signin offline_access"
 
-# 设备码登录的实时状态：界面上的「登录窗口」直接读它，不必去翻日志
+# 登录进度：界面上的登录弹层直接轮询它，不用去翻日志
 _lock = threading.Lock()
-device: dict = {
+_state: dict = {
     "status": "idle",        # idle | waiting | ok | error
-    "code": "", "uri": "", "uri_complete": "",
-    "expires_in": 0, "started": 0.0,
-    "stage": "", "error": "", "name": "", "uuid": "",
+    "stage": "",             # 当前进行到哪一步（给人看的中文）
+    "error": "",
+    "name": "", "uuid": "",
+    "uri": "",               # 授权页链接（界面上「重新打开」用）
+    "mode": "",              # window = 应用窗口，browser = 默认浏览器
+    "started": 0.0,
 }
 
 
-def device_state() -> dict:
+def login_status() -> dict:
     with _lock:
-        return dict(device)
+        return dict(_state)
 
 
-def _set_device(**kw) -> None:
+def _set(**kw) -> None:
     with _lock:
-        device.update(kw)
+        _state.update(kw)
+
+
+def reset_state() -> None:
+    _set(status="idle", stage="", error="", name="", uuid="",
+         uri="", mode="", started=0.0)
 
 
 def offline_uuid(name: str) -> str:
@@ -71,7 +90,63 @@ def current_account() -> dict:
     return acc
 
 
-# ------------------------------------------------------------ 微软登录
+# ------------------------------------------------------------ 微软授权
+
+
+def auth_url(state: str, prompt: str = "select_account") -> str:
+    """拼出微软授权页链接（state 用来校验回调确实是这次登录）。"""
+    query = {
+        "client_id": CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": REDIRECT,
+        "scope": SCOPE,
+        "state": state,
+    }
+    if prompt:
+        query["prompt"] = prompt
+    return AUTHORIZE + "?" + urllib.parse.urlencode(query, quote_via=urllib.parse.quote)
+
+
+def parse_code(text: str) -> str:
+    """从回调链接里取出授权码；也容忍直接粘贴 code 本身。"""
+    raw = (text or "").strip().strip('"').strip("'")
+    if not raw:
+        raise RuntimeError("还没有粘贴链接")
+
+    low = raw.lower()
+    if "error=access_denied" in low:
+        raise RuntimeError("授权被取消，可以重新点「开始登录」")
+    if re.search(r"[?&#]error=", raw):
+        raise RuntimeError("微软返回了错误：请检查链接是否完整")
+
+    m = re.search(r"[?&#]code=([^&\s#]+)", raw)
+    if m:
+        return urllib.parse.unquote(m.group(1))
+    if re.fullmatch(r"[A-Za-z0-9._\-]{16,}", raw):
+        return raw
+    raise RuntimeError("链接里没有 code，请复制浏览器地址栏里的整条网址")
+
+
+def _check_state(text: str, expect: str) -> None:
+    m = re.search(r"[?&#]state=([^&\s#]+)", text or "")
+    if not m or not expect:
+        return
+    if urllib.parse.unquote(m.group(1)) != expect:
+        raise RuntimeError("授权回调与本次登录不匹配，请重新登录")
+
+
+def exchange_code(code: str) -> dict:
+    """授权码换微软令牌。"""
+    return _post_form(MS_TOKEN, {
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "code": code,
+        "redirect_uri": REDIRECT,
+        "scope": SCOPE,
+    })
+
+
+# ------------------------------------------------------------ 令牌链
 
 
 def _post_json(url: str, payload: dict, headers: Optional[dict] = None) -> dict:
@@ -93,6 +168,7 @@ def _post_form(url: str, payload: dict) -> dict:
     data = urllib.parse.urlencode(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={
         "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
         "User-Agent": net.USER_AGENT,
     }, method="POST")
     try:
@@ -100,67 +176,26 @@ def _post_form(url: str, payload: dict) -> dict:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "ignore")
-        raise RuntimeError(f"登录接口返回 {e.code}: {body[:300]}") from e
+        raise RuntimeError(f"微软登录接口返回 {e.code}: {body[:300]}") from e
 
 
-def microsoft_login(
-    client_id: str,
-    emit: Callable[[str], None] = print,
-    wait: bool = True,
-) -> dict:
-    """设备码登录。emit 里会给出用户需要访问的网址与代码。"""
-    if not client_id:
-        raise RuntimeError("需要先在设置里填写 Azure 应用（公共客户端）ID")
+def login_with_token(token: dict, emit: Callable[[str], None] = print) -> dict:
+    """微软令牌 → Xbox Live → XSTS → Minecraft 档案，成功后写入配置。"""
+    ms_access = token.get("access_token") or ""
+    if not ms_access:
+        raise RuntimeError("微软没有返回访问令牌，请重试")
 
-    _set_device(status="waiting", code="", uri="", uri_complete="", name="", uuid="",
-                error="", started=time.time(), stage="正在向微软申请设备码…")
-
-    dc = _post_form(DEVICE_CODE, {"client_id": client_id, "scope": SCOPE})
-    _set_device(code=dc["user_code"], uri=dc["verification_uri"],
-                uri_complete=dc.get("verification_uri_complete", dc["verification_uri"]),
-                expires_in=int(dc.get("expires_in", 900)),
-                stage="等待你在浏览器里输入代码")
-    emit(f"请在浏览器打开 {dc['verification_uri']} 并输入代码：{dc['user_code']}")
-    emit(f"链接：{dc.get('verification_uri_complete', dc['verification_uri'])}")
-    if not wait:
-        return {"device_code": dc["device_code"], "user_code": dc["user_code"],
-                "verification_uri": dc["verification_uri"],
-                "expires_in": dc.get("expires_in", 900)}
-
-    interval = int(dc.get("interval", 5))
-    deadline = time.time() + int(dc.get("expires_in", 900))
-    token = None
-    while time.time() < deadline:
-        time.sleep(interval)
-        try:
-            token = _post_form(TOKEN, {
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                "client_id": client_id,
-                "device_code": dc["device_code"],
-            })
-            break
-        except RuntimeError as e:
-            msg = str(e)
-            if "authorization_pending" in msg:
-                continue
-            if "slow_down" in msg:
-                interval += 5
-                continue
-            raise
-    if not token:
-        raise RuntimeError("登录超时，请重试")
-
-    _set_device(stage="已验证微软账号，正在验证 Xbox Live…")
+    _set(stage="正在验证 Xbox Live 账号…")
     emit("正在验证 Xbox Live 账号…")
     xbl = _post_json(XBL, {
         "Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com",
-                       "RpsTicket": f"d={token['access_token']}"},
+                       "RpsTicket": f"d={ms_access}"},
         "RelyingParty": "http://auth.xboxlive.com",
         "TokenType": "JWT",
     })
     uhs = xbl["DisplayClaims"]["xui"][0]["uhs"]
 
-    _set_device(stage="正在获取 XSTS 令牌…")
+    _set(stage="正在获取 XSTS 令牌…")
     emit("正在获取 XSTS 令牌…")
     try:
         xsts = _post_json(XSTS, {
@@ -171,20 +206,25 @@ def microsoft_login(
     except RuntimeError as e:
         msg = str(e)
         if "2148916233" in msg:
-            raise RuntimeError("该微软账号还没有 Xbox 档案，请先创建") from e
+            raise RuntimeError("该微软账号还没有 Xbox 档案，请先在 xbox.com 创建") from e
         if "2148916238" in msg:
-            raise RuntimeError("该账号是未成年账号，需要加入家庭组") from e
+            raise RuntimeError("该账号是未成年账号，需要先加入家庭组") from e
         raise
 
-    _set_device(stage="正在登录 Minecraft…")
+    _set(stage="正在登录 Minecraft…")
     emit("正在登录 Minecraft…")
     mc = _post_json(MC_LOGIN, {"identityToken": f"XBL3.0 x={uhs};{xsts['Token']}"})
     access = mc["access_token"]
 
     req = urllib.request.Request(MC_PROFILE, headers={
         "Authorization": f"Bearer {access}", "User-Agent": net.USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        profile = json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            profile = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise RuntimeError("这个微软账号没有购买 Minecraft（没查到游戏档案）") from e
+        raise
 
     acc = {
         "type": "microsoft",
@@ -196,20 +236,14 @@ def microsoft_login(
         "login_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     config.update({"account": acc, "player_name": acc["name"]})
-    _set_device(status="ok", stage="登录成功", name=acc["name"], uuid=acc["uuid"],
-                error="")
+    _set(status="ok", stage="登录成功", name=acc["name"], uuid=acc["uuid"], error="")
     emit(f"登录成功：{acc['name']}")
     return acc
 
 
-def ms_login_async(client_id: str, emit: Callable[[str], None],
-                   done: Callable[[Optional[dict], Optional[str]], None]) -> None:
-    def run() -> None:
-        try:
-            acc = microsoft_login(client_id, emit)
-            done(acc, None)
-        except Exception as e:  # noqa: BLE001
-            _set_device(status="error", stage="登录失败", error=str(e))
-            done(None, str(e))
-
-    threading.Thread(target=run, daemon=True).start()
+def complete_login(code: str, state: str = "", emit: Callable[[str], None] = print) -> dict:
+    """拿到授权码后的完整收尾（换令牌 + 令牌链）。"""
+    _set(status="waiting", stage="已拿到授权，正在换取微软令牌…")
+    emit("已拿到授权码，正在换取微软令牌…")
+    token = exchange_code(code)
+    return login_with_token(token, emit)

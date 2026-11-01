@@ -517,6 +517,20 @@ body.in-window ::selection { background: rgba(217, 122, 41, .18); }
 .device-stage.ok { color: var(--ok); font-weight: 600; }
 .device-stage.err { color: var(--err); }
 .device-box .btn { align-self: flex-start; }
+.ms-manual { display: flex; flex-direction: column; gap: 7px; }
+.ms-manual[hidden] { display: none; }
+.ms-manual summary {
+  cursor: pointer; color: var(--muted); list-style: none; user-select: none;
+}
+.ms-manual summary::-webkit-details-marker { display: none; }
+.ms-manual summary:hover { color: var(--text); }
+.ms-manual[open] summary { color: var(--accent-2); }
+.ms-manual input {
+  width: 100%; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line);
+  background: #fff; font-size: 12px; font-family: var(--mono); color: var(--text);
+}
+.ms-manual input:focus { outline: none; border-color: var(--accent-2); }
+.ms-manual .btn { margin-top: 2px; }
 
 /* ---------------- 版本选择弹层 ---------------- */
 .modal-wide { width: 520px; max-height: 74vh; display: flex; flex-direction: column; }

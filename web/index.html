@@ -433,7 +433,7 @@
 <div class="modal-mask" id="accountModal">
   <div class="modal modal-login">
     <h3>登录</h3>
-    <p class="muted small">先选一种账号类型：离线随时可用，正版走微软设备码授权。</p>
+    <p class="muted small">先选一种账号类型：离线随时可用，正版跳微软官方授权页登录。</p>
 
     <div class="branch-row" id="loginBranches">
       <button class="branch active" data-branch="offline">
@@ -446,7 +446,7 @@
         <span class="branch-icon">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>
         </span>
-        <span class="branch-text"><strong>微软正版</strong><em>设备码登录，带皮肤与联机验证</em></span>
+        <span class="branch-text"><strong>微软正版</strong><em>跳转微软授权，自动获取正版 ID</em></span>
       </button>
     </div>
 
@@ -459,15 +459,15 @@
     </div>
 
     <div class="branch-pane" id="pane-ms" hidden>
-      <label class="field">
-        <span>Azure 客户端 ID（公共客户端，填一次即可）</span>
-        <input id="modalMsClient" type="text" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
-      </label>
+      <p class="muted small">点「开始登录」会弹出微软官方登录页；登录并同意授权后，启动器会自动取回正版 ID 并完成登录。</p>
       <div class="device-box" id="deviceBox" hidden>
-        <span class="muted small">在浏览器打开下面的网址，输入这个代码：</span>
-        <div class="device-code" id="deviceCode">—</div>
-        <div class="device-stage muted small" id="deviceStage"></div>
-        <button class="btn btn-ghost btn-mini" id="deviceOpen">打开登录页面</button>
+        <div class="device-stage small" id="deviceStage"></div>
+        <button class="btn btn-ghost btn-mini" id="deviceOpen" hidden>在浏览器中打开登录页</button>
+        <details class="ms-manual">
+          <summary class="small">已完成授权却没自动登录？点这里粘贴链接</summary>
+          <input id="msCallback" type="text" spellcheck="false" placeholder="粘贴浏览器地址栏里 oauth20_desktop.srf?code=... 的整条链接">
+          <button class="btn btn-mini" id="msSubmit">用这条链接登录</button>
+        </details>
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" id="modalMsLogin">开始登录</button>

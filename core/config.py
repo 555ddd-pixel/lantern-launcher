@@ -34,7 +34,7 @@ DEFAULTS = {
     "window_width": 854,           # 游戏窗口宽（不是启动器窗口）
     "window_height": 480,          # 游戏窗口高
     "font_anti_aliasing": True,
-    "ms_client_id": "",            # 正版登录需要自备 Azure 公共客户端 ID
+    "ms_client_id": "",            # 已废弃：正版登录改用内置客户端 ID，不再需要自备 Azure 应用
 
     # ---------- 桌面窗口 ----------
     "app_window": {"x": -1, "y": -1, "w": 1320, "h": 880, "maximized": False},

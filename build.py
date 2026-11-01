@@ -131,9 +131,9 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "新增「联机」页：局域网地址一键复制、UPnP 端口映射开放到公网、"
-                 "公网不可达时给出 P2P 组网方案并支持一键下载 EasyTier；"
-                 "设置页移除重复的正版登录入口（登录弹层里已有）。",
+        "notes": "正版登录改为微软官方授权页：点「开始登录」直接弹出微软登录窗口，"
+                 "登录并同意后自动抓取回调、取回正版 ID 完成登录，不再需要自己填 Azure 客户端 ID；"
+                 "误关窗口或抓取失败时，可粘贴浏览器地址栏链接一键补登录。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {
