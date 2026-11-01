@@ -5,6 +5,7 @@ build/
 .cache/
 logs/
 dist/*.exe
+dist/*.zip
 
 # ---------- 本地个人配置（含本机路径，不提交） ----------
 config.json
