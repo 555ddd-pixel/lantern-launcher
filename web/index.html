@@ -31,6 +31,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>
         <span>下载</span>
       </button>
+      <button class="nav-item" data-page="modpack">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5"/><path d="M12 12v9"/></svg>
+        <span>整合包</span>
+      </button>
       <button class="nav-item" data-page="versions">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
         <span>版本</span>
@@ -156,6 +160,36 @@
         <div class="empty">正在读取版本清单…</div>
       </div>
       <div class="list-foot" id="versionCount"></div>
+    </section>
+
+    <!-- 整合包 -->
+    <section class="page" id="page-modpack">
+      <div class="page-head">
+        <div>
+          <h1>整合包</h1>
+          <p class="muted">实时搜索网络上的整合包，一键下载安装。也可以把 <span class="mono">.mrpack</span> / <span class="mono">.zip</span> 直接拖进窗口。</p>
+        </div>
+        <button class="btn btn-ghost" id="packRefresh">刷新</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="tabs" id="packLoaders">
+          <button class="tab active" data-loader="">全部</button>
+          <button class="tab" data-loader="fabric">Fabric</button>
+          <button class="tab" data-loader="forge">Forge</button>
+          <button class="tab" data-loader="quilt">Quilt</button>
+          <button class="tab" data-loader="neoforge">NeoForge</button>
+        </div>
+        <div class="search">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="packSearch" placeholder="搜索整合包，例如 Fabulously Optimized / 机械动力" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="pack-grid" id="packList">
+        <div class="empty">输入关键词实时搜索，或把整合包文件拖进窗口。</div>
+      </div>
+      <div class="list-foot" id="packCount"></div>
     </section>
 
     <!-- 版本 -->
@@ -290,7 +324,7 @@
 
         <div class="panel">
           <h2>正版登录</h2>
-          <p class="muted small">使用微软设备码登录。需要一个 Azure 应用的公共客户端 ID（自建应用，免费）。</p>
+          <p class="muted small">点「开始登录」会打开登录窗口，在「微软正版 / 离线」两个分支里选。正版走设备码，需要一个 Azure 应用的公共客户端 ID（自建应用，免费）。</p>
           <label class="field">
             <span>Azure 客户端 ID</span>
             <input id="setMsClient" type="text" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
@@ -339,16 +373,77 @@
   </div>
 </div>
 
-<!-- 账号弹层 -->
+<!-- 登录弹层：先选分支，再填对应信息 -->
 <div class="modal-mask" id="accountModal">
-  <div class="modal">
-    <h3>切换账号</h3>
-    <p class="muted small">离线账号可自定义名字；正版账号需要先在设置里填好 Azure 客户端 ID。</p>
-    <label class="field"><span>玩家名</span><input id="modalName" type="text" spellcheck="false"></label>
-    <div class="btn-row">
-      <button class="btn btn-primary" id="modalOffline">使用离线账号</button>
-      <button class="btn btn-ghost" id="modalClose">取消</button>
+  <div class="modal modal-login">
+    <h3>登录</h3>
+    <p class="muted small">先选一种账号类型：离线随时可用，正版走微软设备码授权。</p>
+
+    <div class="branch-row" id="loginBranches">
+      <button class="branch active" data-branch="offline">
+        <span class="branch-icon">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>
+        </span>
+        <span class="branch-text"><strong>离线登录</strong><em>自定义名字，离线进单人/局域网</em></span>
+      </button>
+      <button class="branch" data-branch="ms">
+        <span class="branch-icon">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>
+        </span>
+        <span class="branch-text"><strong>微软正版</strong><em>设备码登录，带皮肤与联机验证</em></span>
+      </button>
     </div>
+
+    <div class="branch-pane" id="pane-offline">
+      <label class="field"><span>玩家名</span><input id="modalName" type="text" spellcheck="false"></label>
+      <p class="muted small">名字决定离线 UUID；服务器需要关闭 online-mode 才能进。</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="modalOffline">使用离线账号</button>
+      </div>
+    </div>
+
+    <div class="branch-pane" id="pane-ms" hidden>
+      <label class="field">
+        <span>Azure 客户端 ID（公共客户端，填一次即可）</span>
+        <input id="modalMsClient" type="text" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
+      </label>
+      <div class="device-box" id="deviceBox" hidden>
+        <span class="muted small">在浏览器打开下面的网址，输入这个代码：</span>
+        <div class="device-code" id="deviceCode">—</div>
+        <div class="device-stage muted small" id="deviceStage"></div>
+        <button class="btn btn-ghost btn-mini" id="deviceOpen">打开登录页面</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="modalMsLogin">开始登录</button>
+      </div>
+    </div>
+
+    <div class="btn-row modal-foot">
+      <button class="btn btn-ghost" id="modalClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 整合包版本选择 -->
+<div class="modal-mask" id="packModal">
+  <div class="modal modal-wide">
+    <h3 id="packModalTitle">选择版本</h3>
+    <p class="muted small" id="packModalSub"></p>
+    <div class="ver-pick" id="packVerList"><div class="empty">读取中…</div></div>
+    <div class="btn-row modal-foot">
+      <button class="btn btn-ghost" id="packModalClose">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 拖拽导入遮罩 -->
+<div class="drop-veil" id="dropVeil">
+  <div class="drop-card">
+    <div class="drop-icon">
+      <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+    </div>
+    <strong>松开导入整合包</strong>
+    <span class="muted small">支持 Modrinth .mrpack 与 CurseForge .zip</span>
   </div>
 </div>
 

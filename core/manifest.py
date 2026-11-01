@@ -113,6 +113,14 @@ def latest_release() -> str:
 
 def get_version_json(version_id: str, version_url: str = "", force: bool = False) -> dict:
     """获取某个版本的完整 JSON（含 libraries / assets / arguments）。"""
+    # 已安装版本优先读本地（Fabric/Forge 的 inheritsFrom 父版本靠这条离线解析）
+    local = config.versions_dir / version_id / f"{version_id}.json"
+    if not force and local.exists() and local.stat().st_size > 100:
+        try:
+            return json.loads(local.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
     cache = CACHE_DIR / "versions" / f"{version_id}.json"
     if not force and cache.exists() and cache.stat().st_size > 100:
         try:

@@ -1,13 +1,13 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "published": "2026-11-01",
-  "notes": "桌面软件化：原生窗口（WebView2）+ 系统托盘 + 窗口位置记忆 + 单实例唤起；设置页新增「窗口与托盘」。",
+  "notes": "新增「整合包」页：实时搜索 Modrinth 整合包、一键安装；支持把 .mrpack / CurseForge .zip 直接拖进窗口导入；登录窗口改为「微软正版 / 离线」分支选择，设备码直接显示在弹层里。",
   "min_version": "1.0.0",
   "files": {
     "windows-x64": {
-      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.2.0/LanternLauncher.exe",
-      "size": 20184349,
-      "sha1": "2a6224a06e6854aa76f245e07a1502217af66566"
+      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.3.0/LanternLauncher.exe",
+      "size": 20214817,
+      "sha1": "9617d74f55156cc67fd8b8dfb643b81ab376fe51"
     }
   }
 }

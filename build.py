@@ -131,8 +131,9 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "桌面软件化：原生窗口（WebView2）+ 系统托盘 + 窗口位置记忆 + 单实例唤起；"
-                 "设置页新增「窗口与托盘」。",
+        "notes": "新增「整合包」页：实时搜索 Modrinth 整合包、一键安装；"
+                 "支持把 .mrpack / CurseForge .zip 直接拖进窗口导入；"
+                 "登录窗口改为「微软正版 / 离线」分支选择，设备码直接显示在弹层里。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {

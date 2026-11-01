@@ -76,10 +76,21 @@ def build_plan(
 ) -> InstallPlan:
     """解析版本，生成下载计划（不实际下载）。"""
     say = emit or (lambda *_: None)
-    config.ensure_dirs()
-
     say(f"读取版本 {version_id} 的元数据…")
     raw = get_version_json(version_id, version_url)
+    return build_plan_from_meta(version_id, raw, include_assets=include_assets, emit=emit)
+
+
+def build_plan_from_meta(
+    version_id: str,
+    raw: dict,
+    include_assets: bool = True,
+    emit: Optional[Callable[[str], None]] = None,
+) -> InstallPlan:
+    """同 build_plan，但元数据由调用方提供（Fabric/Forge 等本地 profile）。"""
+    say = emit or (lambda *_: None)
+    config.ensure_dirs()
+
     meta = resolve_meta(raw)
     plan = InstallPlan(version_id=version_id, meta=meta, raw_meta=raw)
     vdir = version_dir(version_id)
@@ -252,7 +263,23 @@ def install(
 ) -> InstallPlan:
     """下载并安装一个版本，返回安装计划（含完成后的路径信息）。"""
     log = emit or (lambda *_: None)
-    plan = build_plan(version_id, version_url, include_assets=include_assets, emit=log)
+    log(f"读取版本 {version_id} 的元数据…")
+    raw = get_version_json(version_id, version_url)
+    return install_from_meta(version_id, raw, progress=progress, emit=emit,
+                             cancel=cancel, include_assets=include_assets)
+
+
+def install_from_meta(
+    version_id: str,
+    raw: dict,
+    progress: Optional[Callable[[dict], None]] = None,
+    emit: Optional[Callable[[str], None]] = None,
+    cancel: Optional[threading.Event] = None,
+    include_assets: bool = True,
+) -> InstallPlan:
+    """按给定的版本 JSON 安装（Fabric/Quilt/Forge 的 profile 走这里）。"""
+    log = emit or (lambda *_: None)
+    plan = build_plan_from_meta(version_id, raw, include_assets=include_assets, emit=log)
 
     vdir = version_dir(version_id)
     vdir.mkdir(parents=True, exist_ok=True)

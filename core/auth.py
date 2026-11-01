@@ -23,6 +23,25 @@ DEVICE_CODE = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecod
 TOKEN = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
 SCOPE = "XboxLive.signin offline_access"
 
+# 设备码登录的实时状态：界面上的「登录窗口」直接读它，不必去翻日志
+_lock = threading.Lock()
+device: dict = {
+    "status": "idle",        # idle | waiting | ok | error
+    "code": "", "uri": "", "uri_complete": "",
+    "expires_in": 0, "started": 0.0,
+    "stage": "", "error": "", "name": "", "uuid": "",
+}
+
+
+def device_state() -> dict:
+    with _lock:
+        return dict(device)
+
+
+def _set_device(**kw) -> None:
+    with _lock:
+        device.update(kw)
+
 
 def offline_uuid(name: str) -> str:
     """Java 的 UUID.nameUUIDFromBytes("OfflinePlayer:"+name) 等价实现。"""
@@ -93,7 +112,14 @@ def microsoft_login(
     if not client_id:
         raise RuntimeError("需要先在设置里填写 Azure 应用（公共客户端）ID")
 
+    _set_device(status="waiting", code="", uri="", uri_complete="", name="", uuid="",
+                error="", started=time.time(), stage="正在向微软申请设备码…")
+
     dc = _post_form(DEVICE_CODE, {"client_id": client_id, "scope": SCOPE})
+    _set_device(code=dc["user_code"], uri=dc["verification_uri"],
+                uri_complete=dc.get("verification_uri_complete", dc["verification_uri"]),
+                expires_in=int(dc.get("expires_in", 900)),
+                stage="等待你在浏览器里输入代码")
     emit(f"请在浏览器打开 {dc['verification_uri']} 并输入代码：{dc['user_code']}")
     emit(f"链接：{dc.get('verification_uri_complete', dc['verification_uri'])}")
     if not wait:
@@ -124,6 +150,7 @@ def microsoft_login(
     if not token:
         raise RuntimeError("登录超时，请重试")
 
+    _set_device(stage="已验证微软账号，正在验证 Xbox Live…")
     emit("正在验证 Xbox Live 账号…")
     xbl = _post_json(XBL, {
         "Properties": {"AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com",
@@ -133,6 +160,7 @@ def microsoft_login(
     })
     uhs = xbl["DisplayClaims"]["xui"][0]["uhs"]
 
+    _set_device(stage="正在获取 XSTS 令牌…")
     emit("正在获取 XSTS 令牌…")
     try:
         xsts = _post_json(XSTS, {
@@ -148,6 +176,7 @@ def microsoft_login(
             raise RuntimeError("该账号是未成年账号，需要加入家庭组") from e
         raise
 
+    _set_device(stage="正在登录 Minecraft…")
     emit("正在登录 Minecraft…")
     mc = _post_json(MC_LOGIN, {"identityToken": f"XBL3.0 x={uhs};{xsts['Token']}"})
     access = mc["access_token"]
@@ -167,6 +196,8 @@ def microsoft_login(
         "login_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     config.update({"account": acc, "player_name": acc["name"]})
+    _set_device(status="ok", stage="登录成功", name=acc["name"], uuid=acc["uuid"],
+                error="")
     emit(f"登录成功：{acc['name']}")
     return acc
 
@@ -178,6 +209,7 @@ def ms_login_async(client_id: str, emit: Callable[[str], None],
             acc = microsoft_login(client_id, emit)
             done(acc, None)
         except Exception as e:  # noqa: BLE001
+            _set_device(status="error", stage="登录失败", error=str(e))
             done(None, str(e))
 
     threading.Thread(target=run, daemon=True).start()

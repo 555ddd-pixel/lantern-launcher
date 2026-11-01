@@ -85,6 +85,7 @@ function go(page) {
   document.title = (PAGE_TITLES[page] ? PAGE_TITLES[page] + " · " : "") + APP_TITLE;
   if (page === "logs") refreshConsole(true);
   if (page === "settings") loadJava();
+  if (page === "modpack") ensurePacks();
 }
 
 $("#nav").addEventListener("click", (e) => {
@@ -271,10 +272,11 @@ function renderLocal() {
   box.innerHTML = state.local.map((v) => `
     <div class="card">
       <div class="card-top">
-        <span class="card-title">${esc(v.id)}</span>
+        <span class="card-title">${esc(v.pack || v.id)}</span>
         <span class="pill ${v.has_jar ? "local" : ""}">${v.has_jar ? "可启动" : "文件不完整"}</span>
       </div>
-      <div class="card-sub">${esc(v.loader || "原版")} · Java ${v.java} · ${fmtBytes(v.size)}</div>
+      <div class="card-sub">${v.pack ? esc(v.id) + " · " : ""}${esc(v.loader || "原版")} · Java ${v.java} · ${fmtBytes(v.size)}</div>
+      ${v.pack ? `<div class="card-sub">${esc(v.source || "")} 整合包${v.pack_version ? " · " + esc(v.pack_version) : ""}</div>` : ""}
       <div class="card-actions">
         <button class="btn btn-primary btn-mini" data-play="${esc(v.id)}">启动</button>
         <button class="btn btn-ghost btn-mini" data-repair="${esc(v.id)}">补全文件</button>
@@ -395,7 +397,9 @@ function applyStatus(data) {
     $("#taskbar").classList.add("show");
     const p = t.progress || {};
     const pct = Math.round((p.ratio || 0) * 100);
-    $("#taskTitle").textContent = t.kind === "java" ? "下载 Java 运行时" : `下载 ${t.version}`;
+    $("#taskTitle").textContent = t.kind === "java" ? "下载 Java 运行时"
+      : t.kind === "modpack" ? `安装整合包 ${t.version || ""}`
+        : t.kind === "login" ? "微软账号登录" : `下载 ${t.version}`;
     $("#taskPercent").textContent = pct + "%";
     $("#taskFill").style.width = Math.max(2, pct) + "%";
     $("#taskSub").textContent = [
@@ -409,7 +413,11 @@ function applyStatus(data) {
     state.taskRunning = false;
     $("#taskbar").classList.remove("show");
     if (t.error) toast("任务失败：" + t.error, "err");
-    else if (t.phase === "完成") toast("下载完成", "ok");
+    else if (t.phase === "完成") {
+      toast(t.kind === "modpack" ? "整合包安装完成" : "下载完成", "ok");
+      if (t.result && t.result.note) toast(t.result.note, "err");
+      if (t.kind === "modpack") go("versions");
+    }
     loadLocal();
     loadVersions(false);
   }
@@ -689,16 +697,8 @@ $("#updateChip").addEventListener("click", () => {
   startUpdate();
 });
 
-$("#msLoginBtn").addEventListener("click", async () => {
-  const cid = $("#setMsClient").value.trim();
-  try {
-    await api("/api/account/microsoft", { method: "POST", body: JSON.stringify({ client_id: cid }) });
-    toast("已发起登录，请打开「日志」页查看验证码", "ok");
-    go("logs");
-  } catch (e) { toast(e.message, "err"); }
-});
-
-$("#offlineBtn").addEventListener("click", () => { openAccountModal(); });
+$("#msLoginBtn").addEventListener("click", () => openAccountModal("ms"));
+$("#offlineBtn").addEventListener("click", () => openAccountModal("offline"));
 
 /* ---------------- 账号 ---------------- */
 
@@ -717,14 +717,97 @@ function renderAccount() {
   }
 }
 
-function openAccountModal() {
+let loginBranch = "offline";
+let loginTimer = null;
+let deviceInfo = {};
+
+function openAccountModal(branch) {
+  const current = (state.config.account || {}).type;
+  loginBranch = branch || (current === "microsoft" ? "ms" : "offline");
   $("#modalName").value = state.config.player_name || "Steve";
+  $("#modalMsClient").value = state.config.ms_client_id || $("#setMsClient").value || "";
+  selectBranch(loginBranch);
   $("#accountModal").classList.add("show");
+  if (loginBranch === "ms") { pollDevice(); startLoginPolling(); }
 }
-$("#accountBtn").addEventListener("click", openAccountModal);
-$("#modalClose").addEventListener("click", () => $("#accountModal").classList.remove("show"));
+
+function closeAccountModal() {
+  $("#accountModal").classList.remove("show");
+  if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
+}
+
+function selectBranch(branch) {
+  loginBranch = branch;
+  $$("#loginBranches .branch").forEach((b) => b.classList.toggle("active", b.dataset.branch === branch));
+  $("#pane-offline").hidden = branch !== "offline";
+  $("#pane-ms").hidden = branch !== "ms";
+}
+
+$("#loginBranches").addEventListener("click", (e) => {
+  const b = e.target.closest(".branch");
+  if (!b) return;
+  selectBranch(b.dataset.branch);
+  if (b.dataset.branch === "ms") { pollDevice(); startLoginPolling(); }
+});
+
+function renderDevice(d) {
+  deviceInfo = d || {};
+  const box = $("#deviceBox");
+  if (!d || !d.status || d.status === "idle") { box.hidden = true; return; }
+  box.hidden = false;
+  $("#deviceCode").textContent = d.code || "—";
+  const stage = $("#deviceStage");
+  stage.className = "device-stage small " + (d.status === "ok" ? "ok" : d.status === "error" ? "err" : "muted");
+  if (d.status === "ok") stage.textContent = `登录成功：${d.name}`;
+  else if (d.status === "error") stage.textContent = d.error || "登录失败";
+  else stage.textContent = (d.stage || "等待授权") + (d.uri ? `（${d.uri}）` : "");
+}
+
+$("#deviceOpen").addEventListener("click", () => {
+  const url = deviceInfo.uri_complete || deviceInfo.uri;
+  if (url) window.open(url, "_blank");
+  else toast("还没有拿到登录地址，先点「开始登录」", "err");
+});
+
+async function pollDevice() {
+  try {
+    const { account } = await api("/api/login/state");
+    renderDevice(account);
+    if (account && account.status === "ok") {
+      const { config } = await api("/api/config");
+      state.config = config;
+      fillSettings();
+      renderAccount();
+      toast("已登录微软账号 " + account.name, "ok");
+      if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
+      setTimeout(closeAccountModal, 900);
+    } else if (account && account.status === "error") {
+      if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
+    }
+  } catch (e) { /* 服务忙时忽略 */ }
+}
+
+function startLoginPolling() {
+  if (loginTimer) return;
+  loginTimer = setInterval(pollDevice, 1600);
+}
+
+$("#modalMsLogin").addEventListener("click", async () => {
+  const cid = $("#modalMsClient").value.trim();
+  try {
+    await api("/api/account/microsoft", { method: "POST", body: JSON.stringify({ client_id: cid }) });
+    state.config.ms_client_id = cid;
+    $("#setMsClient").value = cid;
+    toast("已发起登录，按弹层里的代码在浏览器授权", "ok");
+    startLoginPolling();
+    setTimeout(pollDevice, 600);
+  } catch (e) { toast(e.message, "err"); }
+});
+
+$("#accountBtn").addEventListener("click", () => openAccountModal());
+$("#modalClose").addEventListener("click", closeAccountModal);
 $("#accountModal").addEventListener("click", (e) => {
-  if (e.target.id === "accountModal") $("#accountModal").classList.remove("show");
+  if (e.target.id === "accountModal") closeAccountModal();
 });
 $("#modalOffline").addEventListener("click", async () => {
   const name = $("#modalName").value.trim() || "Steve";
@@ -733,7 +816,7 @@ $("#modalOffline").addEventListener("click", async () => {
     state.config.account = data.account;
     state.config.player_name = name;
     renderAccount();
-    $("#accountModal").classList.remove("show");
+    closeAccountModal();
     toast("已切换为离线账号 " + name, "ok");
   } catch (e) { toast(e.message, "err"); }
 });
@@ -765,8 +848,231 @@ window.addEventListener("keydown", (e) => {
 });
 
 const PAGE_TITLES = {
-  home: "主页", download: "下载", versions: "版本", settings: "设置", logs: "日志",
+  home: "主页", download: "下载", modpack: "整合包", versions: "版本",
+  settings: "设置", logs: "日志",
 };
+
+
+/* ---------------- 整合包：实时搜索 + 一键安装 ---------------- */
+
+const packState = {
+  hits: [], total: 0, offset: 0, q: "", loader: "", loading: false,
+  timer: null, loaded: false, project: null,
+};
+
+function fmtNum(n) {
+  n = Number(n) || 0;
+  if (n >= 100000000) return (n / 100000000).toFixed(1) + " 亿";
+  if (n >= 10000) return (n / 10000).toFixed(1) + " 万";
+  return String(n);
+}
+
+function ensurePacks() {
+  if (!packState.loaded) searchPacks(true);
+}
+
+async function searchPacks(reset) {
+  if (packState.loading) return;
+  packState.loading = true;
+  if (reset) { packState.offset = 0; packState.hits = []; }
+  const box = $("#packList");
+  box.innerHTML = '<div class="empty">正在搜索…</div>';
+  try {
+    const qs = new URLSearchParams({
+      q: packState.q, loader: packState.loader,
+      offset: String(packState.offset), limit: "24", index: packState.q ? "relevance" : "downloads",
+    });
+    const data = await api("/api/modpack/search?" + qs);
+    packState.hits = data.hits || [];
+    packState.total = data.total || 0;
+    packState.loaded = true;
+    renderPacks();
+  } catch (e) {
+    box.innerHTML = `<div class="empty">搜索失败：${esc(e.message)}<br><span class="small">国内网络访问 Modrinth 可能较慢，稍后重试或设置代理</span></div>`;
+  } finally {
+    packState.loading = false;
+  }
+}
+
+function renderPacks() {
+  const box = $("#packList");
+  if (!packState.hits.length) {
+    box.innerHTML = '<div class="empty">没有匹配的整合包，换个关键词试试。</div>';
+    $("#packCount").textContent = "";
+    return;
+  }
+  box.innerHTML = packState.hits.map((h, i) => `
+    <article class="pack-card">
+      <div class="pack-top">
+        <div class="pack-icon">${h.icon ? `<img src="${esc(h.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : "📦"}</div>
+        <div class="pack-title">
+          <strong title="${esc(h.title)}">${esc(h.title)}</strong>
+          <span class="muted small">${esc(h.author || "")}${h.updated ? " · " + esc(h.updated) : ""}</span>
+        </div>
+      </div>
+      <p class="pack-desc">${esc(h.description || "")}</p>
+      <div class="pack-tags">${(h.categories || []).slice(0, 4).map((c) => `<span class="pill">${esc(c)}</span>`).join("")}</div>
+      <div class="pack-foot">
+        <span class="muted small">↓ ${fmtNum(h.downloads)} · ★ ${fmtNum(h.follows)}</span>
+        <button class="btn btn-primary btn-mini" data-pick="${i}">安装</button>
+      </div>
+    </article>`).join("");
+  box.querySelectorAll("[data-pick]").forEach((b) => {
+    b.addEventListener("click", () => openPackVersions(packState.hits[Number(b.dataset.pick)]));
+  });
+  $("#packCount").textContent = packState.total > packState.hits.length
+    ? `共 ${packState.total} 个结果，显示前 ${packState.hits.length} 个（输入关键词缩小范围）`
+    : `共 ${packState.total} 个结果`;
+}
+
+async function openPackVersions(hit) {
+  if (!hit) return;
+  packState.project = hit;
+  $("#packModalTitle").textContent = hit.title;
+  $("#packModalSub").textContent = hit.description || "";
+  $("#packVerList").innerHTML = '<div class="empty">正在读取版本列表…</div>';
+  $("#packModal").classList.add("show");
+  try {
+    const qs = new URLSearchParams({ project: hit.slug || hit.id, loader: packState.loader });
+    const data = await api("/api/modpack/versions?" + qs);
+    const rows = data.versions || [];
+    if (!rows.length) {
+      $("#packVerList").innerHTML = '<div class="empty">该筛选下没有可用版本，换个 loader 试试。</div>';
+      return;
+    }
+    $("#packVerList").innerHTML = rows.slice(0, 60).map((v) => `
+      <div class="ver-pick-row">
+        <div class="ver-pick-meta">
+          <strong>${esc(v.name || v.number)}</strong>
+          <span class="muted small">MC ${esc((v.game_versions || []).join(" / "))} · ${esc((v.loaders || []).join(" / "))} · ${esc(v.date)}</span>
+        </div>
+        <button class="btn btn-primary btn-mini" data-ver="${esc(v.id)}">安装</button>
+      </div>`).join("");
+    $("#packVerList").querySelectorAll("[data-ver]").forEach((b) => {
+      b.addEventListener("click", () => installPack(hit, b.dataset.ver));
+    });
+  } catch (e) {
+    $("#packVerList").innerHTML = `<div class="empty">读取失败：${esc(e.message)}</div>`;
+  }
+}
+
+async function installPack(hit, versionId) {
+  try {
+    $("#taskbar").classList.add("show");
+    $("#taskTitle").textContent = "安装整合包 " + hit.title;
+    $("#taskSub").textContent = "准备下载…";
+    $("#taskFill").style.width = "2%";
+    $("#taskPercent").textContent = "0%";
+    await api("/api/modpack/install", {
+      method: "POST",
+      body: JSON.stringify({ project: hit.slug || hit.id, version: versionId, title: hit.title }),
+    });
+    $("#packModal").classList.remove("show");
+    toast("开始安装《" + hit.title + "》，进度见「日志」页", "ok");
+    go("logs");
+  } catch (e) {
+    toast(e.message, "err");
+    $("#taskbar").classList.remove("show");
+  }
+}
+
+$("#packSearch").addEventListener("input", (e) => {
+  packState.q = e.target.value;
+  if (packState.timer) clearTimeout(packState.timer);
+  packState.timer = setTimeout(() => searchPacks(true), 380);
+});
+
+$("#packLoaders").addEventListener("click", (e) => {
+  const tab = e.target.closest(".tab");
+  if (!tab) return;
+  $$("#packLoaders .tab").forEach((x) => x.classList.toggle("active", x === tab));
+  packState.loader = tab.dataset.loader || "";
+  searchPacks(true);
+});
+
+$("#packRefresh").addEventListener("click", () => searchPacks(true));
+$("#packModalClose").addEventListener("click", () => $("#packModal").classList.remove("show"));
+$("#packModal").addEventListener("click", (e) => {
+  if (e.target.id === "packModal") $("#packModal").classList.remove("show");
+});
+
+/* ---------------- 拖拽整合包导入 ---------------- */
+
+let dragDepth = 0;
+
+function hasFiles(e) {
+  const dt = e.dataTransfer;
+  if (!dt) return false;
+  const types = Array.from(dt.types || []);
+  return types.includes("Files");
+}
+
+function showVeil(on) {
+  const v = $("#dropVeil");
+  if (!v) return;
+  v.classList.toggle("show", !!on);
+  if (!on) dragDepth = 0;
+}
+
+window.addEventListener("dragenter", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  showVeil(true);
+});
+
+window.addEventListener("dragover", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  showVeil(true);
+});
+
+window.addEventListener("dragleave", (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) showVeil(false);
+});
+
+window.addEventListener("drop", async (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  showVeil(false);
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  const lower = file.name.toLowerCase();
+  if (!lower.endsWith(".mrpack") && !lower.endsWith(".zip")) {
+    toast("只支持 .mrpack 或 .zip 整合包", "err");
+    return;
+  }
+  await uploadPack(file);
+});
+
+async function uploadPack(file) {
+  $("#taskbar").classList.add("show");
+  $("#taskTitle").textContent = "导入整合包 " + file.name;
+  $("#taskSub").textContent = `上传中 · ${fmtBytes(file.size)}`;
+  $("#taskFill").style.width = "30%";
+  $("#taskPercent").textContent = "…";
+  try {
+    const res = await fetch("/api/modpack/upload", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Filename": encodeURIComponent(file.name),
+      },
+      body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) throw new Error(data.error || `上传失败 (${res.status})`);
+    toast(`已接收 ${file.name}（${fmtBytes(data.size)}），开始安装`, "ok");
+    go("logs");
+  } catch (e) {
+    $("#taskbar").classList.remove("show");
+    toast("导入失败：" + e.message, "err");
+  }
+}
 
 /* ---------------- 启动 ---------------- */
 

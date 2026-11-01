@@ -33,13 +33,40 @@ PCL2（Plain Craft Launcher 2，作者 龙腾猫跃）是我这次调研的参�
 - **双下载源**：Mojang 官方 / BMCLAPI 镜像，支持自动测速选择
 - **Java 智能匹配**：扫描本机所有 JVM，按版本要求（Java 8 / 17 / 21 / 25…）挑选；缺失时自动下载 Mojang 官方运行时（BMCLAPI 镜像，数秒即完成）
 - **两种参数格式**：1.13+ 的 `arguments` 对象数组，以及 1.6–1.12 的 `minecraftArguments` 字符串，远古版本也能启动
-- **离线登录 + 微软正版登录**（设备码流程，需自备 Azure 客户端 ID）
+- **登录分支**：登录窗口里先选「离线」或「微软正版」，正版的设备码与登录进度直接显示在弹层里（需自备 Azure 客户端 ID）
+- **整合包**：实时搜索网络整合包（Modrinth），一键下载 + 装原版 + 装 loader + 铺模组；也支持把 `.mrpack` / CurseForge `.zip` **拖进窗口**自动导入
 - **老版本资源兼容**：自动处理 `virtual` / `map_to_resources` 的 pre-1.6 资源布局
 - **超长 classpath 兜底**：超过 Windows 命令行 32K 上限时切换 Java 9+ 的 `@argfile`
 - **桌面软件形态**：原生应用窗口（WebView2 内核，无地址栏）+ 系统托盘 + 记住窗口大小/位置 + 单实例唤起（第二次双击把窗口切到前台，不开新进程）
 - **实时更新**（详见下文）：启动器自动检查/下载/替换自身并重启；实时监听 Minecraft 版本清单，出现新版本立刻弹提示
 - **实时推送**：安装进度与游戏日志通过 SSE（Server-Sent Events）即时推送到界面，断线自动回退轮询
 - 界面：版本筛选/搜索、实时进度与速度、启动日志、设置项即时保存
+
+---
+
+## 整合包
+
+启动器内置整合包下载与导入，三种来源都能用：
+
+| 来源 | 说明 |
+| --- | --- |
+| 「整合包」页实时搜索 | 边输入边搜 Modrinth（`project_type:modpack` 限定），可按 Fabric / Forge / Quilt / NeoForge 过滤 |
+| 一键安装 | 选项目 → 选版本 → 自动装原版 → 装对应 loader → 下载所有模组 → 解压 overrides → 建实例 |
+| 拖拽导入 | 把 `.mrpack` 或 CurseForge 导出的 `.zip` 拖进窗口任意位置，松手即开始导入 |
+
+**实例隔离**：每个整合包装在 `<游戏目录>/instances/<名字>/` 里，`mods/`、`config/`、`saves/` 都在实例目录内，启动时用 `--gameDir` 指过去；原版、其他整合包的存档互不干扰。版本目录里会写一个 `.lantern-instance.json` 侧车文件记录映射，删版本时实例目录一起清掉。
+
+**loader 安装方式**
+
+- Fabric / Quilt：读官方 meta 的 `profile/json`，落成版本 JSON 后由启动器自己下依赖库（最稳）
+- Forge / NeoForge：下载官方 installer jar，用 `java -jar ... --installClient <游戏目录>` 安装，之后再补齐库（需要本机有 Java）
+
+**格式支持**
+
+- `.mrpack`（Modrinth 官方格式）：完整支持，`modrinth.index.json` 里的文件都带下载地址
+- CurseForge `.zip`：读 `manifest.json`，导入 `overrides/` 与包里自带的 mods；如果该包只写了 `projectID/fileID` 而没有实际 mods 文件，则补全需要 CurseForge API Key，日志里会明确提示
+
+自检：`python tools/test_modpack.py`（解析真实 .mrpack、生成 Fabric 安装计划、跑一遍实例落盘并在启动参数里验证 `--gameDir`）
 
 ---
 
@@ -66,7 +93,7 @@ python build.py --clean    # 清掉旧产物后重新打包
 - 双击 `LanternLauncher.exe` 直接弹出**软件窗口**（原生窗口，有标题栏/托盘，不是浏览器标签页）；再次双击不会起第二个实例，而是把已运行的窗口切到前台
 - 窗口实现：默认用 pywebview + WebView2（Windows 10/11 自带运行时）；缺依赖时自动降级为 Edge/Chrome 内核的应用窗口（同样无地址栏），再不行就是普通浏览器页面
 - 「窗口与托盘」设置：关闭窗口时最小化到托盘（点托盘图标恢复）、退出启动器
-- **发布更新的方法**：改 `core/version.py` 里的 `VERSION` → `python build.py` → 到 [Releases](https://github.com/555ddd-pixel/lantern-launcher/releases/new) 建一个 `v1.2.1` 这样的 Tag，把 `dist/LanternLauncher.exe` 和 `dist/update.json` **两个都**作为附件上传 → 发布。老用户的启动器下一次检查就会自动完成升级（`build.py` 已把清单里的下载地址写成对应 Release 的绝对地址）
+- **发布更新的方法**：改 `core/version.py` 里的 `VERSION` → `python build.py` → 到 [Releases](https://github.com/555ddd-pixel/lantern-launcher/releases/new) 建一个 `v1.3.1` 这样的 Tag，把 `dist/LanternLauncher.exe` 和 `dist/update.json` **两个都**作为附件上传 → 发布。老用户的启动器下一次检查就会自动完成升级（`build.py` 已把清单里的下载地址写成对应 Release 的绝对地址）
 - 只想做离线/U 盘分发时用 `python build.py --local-url`，清单里的地址会退回相对路径（exe 和 update.json 放同一个文件夹即可）
 - 命令行：`--browser`（用默认浏览器打开）、`--headless`（只起服务）、`--port 9000`、`--version`
 

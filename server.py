@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import sys
 import threading
 import time
@@ -12,11 +14,11 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from core import auth, installer, java as javamod, launch as launcher, live
-from core import updater
-from core.config import LOG_DIR, ROOT, config
+from core import modpack, updater
+from core.config import CACHE_DIR, LOG_DIR, ROOT, config
 from core.manifest import fetch_manifest, get_version_json, list_local_versions, list_versions
 from core.paths import DATA_DIR, FROZEN, RES_DIR
 from core.version import APP_NAME, BUILD, VERSION
@@ -41,6 +43,8 @@ class TaskManager:
             "progress": None,
             "logs": [],
             "started_at": 0,
+            "result": {},
+            "label": "",
         }
 
     # ---------- 状态 ----------
@@ -88,6 +92,32 @@ class TaskManager:
                                   emit=self._log, cancel=self._cancel)
                 self._update(phase="完成", running=False)
             except installer.Cancelled:
+                self._update(phase="已取消", running=False)
+            except Exception as e:  # noqa: BLE001
+                traceback.print_exc()
+                self._update(phase="失败", error=str(e), running=False)
+                self._log(f"安装失败：{e}")
+
+        self._thread = threading.Thread(target=run, daemon=True)
+        self._thread.start()
+        return True
+
+    # ---------- 整合包 ----------
+    def start_pack(self, label: str, work) -> bool:
+        """通用任务壳：work(cancel) 里跑整合包的下载 + 安装。"""
+        if self.busy:
+            return False
+        self._cancel = threading.Event()
+        self._update(kind="modpack", version=label, phase="准备中", running=True,
+                     message="", error="", progress=None, logs=[], result={},
+                     started_at=time.time())
+
+        def run() -> None:
+            try:
+                self._update(phase="安装中")
+                res = work(self._cancel)
+                self._update(phase="完成", running=False, result=res or {})
+            except modpack.Cancelled:
                 self._update(phase="已取消", running=False)
             except Exception as e:  # noqa: BLE001
                 traceback.print_exc()
@@ -275,6 +305,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         url = urlparse(self.path)
         try:
+            if url.path == "/api/modpack/upload":
+                return self._upload_pack()
             return self._api_post(url.path, self._body())
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
@@ -380,11 +412,17 @@ class Handler(BaseHTTPRequestHandler):
             out = []
             for v in list_local_versions():
                 meta = v.meta
+                pack = modpack.load_pack_meta(v.id)
                 out.append({
                     "id": v.id, "has_jar": v.has_jar, "loader": v.loader,
                     "type": meta.get("type", "release"),
                     "java": (meta.get("javaVersion") or {}).get("majorVersion", 8),
                     "size": installer.installed_size(v.id),
+                    "pack": pack.get("name") or "",
+                    "pack_version": pack.get("version") or "",
+                    "source": pack.get("source") or "",
+                    "instance": pack.get("instance") or "",
+                    "mc_version": pack.get("mc_version") or "",
                 })
             return self._json({"versions": out})
         if path == "/api/config":
@@ -396,12 +434,94 @@ class Handler(BaseHTTPRequestHandler):
                 "required": {v.id: (v.meta.get("javaVersion") or {}).get("majorVersion", 8)
                              for v in list_local_versions()},
             })
+        if path == "/api/modpack/search":
+            q = (qs.get("q", [""])[0] or "").strip()
+            loader = (qs.get("loader", [""])[0] or "").strip()
+            mc = (qs.get("mc", [""])[0] or "").strip()
+            index = (qs.get("index", ["relevance"])[0] or "relevance")
+            try:
+                offset = max(0, int(qs.get("offset", ["0"])[0]))
+            except ValueError:
+                offset = 0
+            try:
+                limit = max(1, min(40, int(qs.get("limit", ["24"])[0])))
+            except ValueError:
+                limit = 24
+            try:
+                return self._json({"ok": True, **modpack.search(
+                    q, loader=loader, mc=mc, index=index, limit=limit, offset=offset)})
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"搜索失败：{e}")
+
+        if path == "/api/modpack/versions":
+            project = (qs.get("project", [""])[0] or "").strip()
+            if not project:
+                return self._error("缺少 project")
+            mc = (qs.get("mc", [""])[0] or "").strip()
+            loader = (qs.get("loader", [""])[0] or "").strip()
+            try:
+                rows = modpack.project_versions(project, mc=mc, loader=loader)
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"读取版本失败：{e}")
+            return self._json({"ok": True, "versions": rows})
+
+        if path == "/api/login/state":
+            return self._json({"ok": True, "account": auth.device_state(),
+                               "config_account": config.data.get("account") or {}})
+
         if path == "/api/logs":
             files = sorted(LOG_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime,
                            reverse=True)[:30]
             return self._json({"logs": [{"name": p.name, "size": p.stat().st_size,
                                          "time": p.stat().st_mtime} for p in files]})
         return self._error("unknown endpoint", 404)
+
+    # ---------- 整合包：拖拽上传（原始字节流，避免解析 multipart） ----------
+    def _upload_pack(self):
+        raw_name = unquote(self.headers.get("X-Filename") or "pack.zip")
+        name = re.sub(r'[\\/:*?"<>|\r\n]+', "_", raw_name).strip() or "pack.zip"
+        try:
+            total = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            total = 0
+        if total <= 0:
+            return self._error("没有收到文件内容")
+        if total > 1024 ** 3:
+            return self._error("文件太大（上限 1 GB）")
+        if not name.lower().endswith((".zip", ".mrpack")):
+            return self._error("只支持 .mrpack 或 .zip 格式的整合包")
+        if task.busy:
+            return self._error("已有任务在进行中，等它完成后再拖入")
+
+        dest_dir = CACHE_DIR / "imports"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"{time.strftime('%Y%m%d-%H%M%S')}-{name}"
+        got = 0
+        try:
+            with open(dest, "wb") as f:
+                while got < total:
+                    chunk = self.rfile.read(min(1 << 20, total - got))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    got += len(chunk)
+        except Exception as e:  # noqa: BLE001
+            return self._error(f"接收文件失败：{e}")
+        if got != total:
+            try:
+                dest.unlink()
+            except OSError:
+                pass
+            return self._error("文件上传中断，请重试")
+
+        def work(cancel):
+            return modpack.install_from_file(dest, progress=task._progress,
+                                             emit=task._log, cancel=cancel)
+
+        if not task.start_pack(Path(name).stem, work):
+            return self._error("已有任务在进行中")
+        return self._json({"ok": True, "name": name, "size": got,
+                           "message": f"已接收 {name}，开始安装"})
 
     def _api_post(self, path: str, body: dict):
         if path == "/api/app/quit":
@@ -429,6 +549,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error(f"版本 {vid} 不存在")
             if task.start_install(vid, match[0].url):
                 return self._json({"ok": True, "version": vid})
+            return self._error("已有任务在进行中")
+
+        if path == "/api/modpack/install":
+            project = (body.get("project") or "").strip()
+            version = (body.get("version") or "").strip()
+            title = (body.get("title") or project).strip()
+            if not project or not version:
+                return self._error("缺少 project / version")
+            if task.busy:
+                return self._error("已有任务在进行中")
+
+            def work(cancel):
+                return modpack.install_from_version(
+                    project, version, progress=task._progress,
+                    emit=task._log, cancel=cancel)
+
+            if task.start_pack(title, work):
+                return self._json({"ok": True, "message": f"开始安装《{title}》"})
             return self._error("已有任务在进行中")
 
         if path == "/api/cancel":
@@ -505,6 +643,10 @@ class Handler(BaseHTTPRequestHandler):
             def done(acc, err):
                 result["account"] = acc
                 result["error"] = err
+                task._update(running=False,
+                             phase="完成" if acc else "失败",
+                             error=err or "",
+                             result={"account": acc} if acc else {})
 
             def emit(text: str) -> None:
                 task._log(text)
@@ -518,10 +660,13 @@ class Handler(BaseHTTPRequestHandler):
             vid = (body.get("id") or "").strip()
             if not vid:
                 return self._error("缺少版本 ID")
+            inst = modpack.instance_game_dir(vid)
             target = config.versions_dir / vid
             if target.exists():
-                import shutil
                 shutil.rmtree(target, ignore_errors=True)
+            # 实例目录只属于这个整合包，一并删掉（存档也会没，界面已提示）
+            if inst and inst.exists() and str(inst).startswith(str(modpack.instances_dir())):
+                shutil.rmtree(inst, ignore_errors=True)
             return self._json({"ok": True})
 
         if path == "/api/open":

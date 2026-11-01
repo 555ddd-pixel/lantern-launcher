@@ -87,6 +87,17 @@ def prepare(
     meta = resolve_meta(raw)
     config.ensure_dirs()
 
+    # 整合包实例：用实例目录当 --gameDir（mods / config / saves 都隔离在实例里）
+    game_dir = config.game_dir
+    try:
+        from .modpack import instance_game_dir
+        game_dir = instance_game_dir(version_id) or config.game_dir
+        game_dir.mkdir(parents=True, exist_ok=True)
+        if game_dir != config.game_dir:
+            say(f"实例目录：{game_dir}")
+    except Exception:
+        game_dir = config.game_dir
+
     account = current_account()
     required = (meta.get("javaVersion") or {}).get("majorVersion") or 8
 
@@ -136,7 +147,7 @@ def prepare(
     ctx = {
         "auth_player_name": account["name"],
         "version_name": version_id,
-        "game_directory": str(config.game_dir),
+        "game_directory": str(game_dir),
         "assets_root": assets_root,
         "game_assets": game_assets,
         "assets_index_name": assets_index,
@@ -232,7 +243,7 @@ def prepare(
     say(f"Java：{runtime.path}（{runtime.major}）")
     say(f"主类：{main_class}")
     return LaunchSpec(
-        version_id=version_id, cmd=cmd, cwd=config.game_dir,
+        version_id=version_id, cmd=cmd, cwd=game_dir,
         java=runtime, log_file=log_file, main_class=main_class,
         detail={"classpath_len": len(classpath), "required_java": required},
     )
