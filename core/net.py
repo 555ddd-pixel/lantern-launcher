@@ -35,6 +35,20 @@ _probe_result: Optional[str] = None
 _ssl_ctx = ssl.create_default_context()
 
 
+_no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def open_local(url: str, data: Optional[bytes] = None,
+               headers: Optional[dict] = None, timeout: float = 5.0):
+    """访问本机 / 局域网地址专用的 opener：不走系统代理。
+
+    用户开了代理软件（很常见）时，HTTP_PROXY 会把这些请求也扔给代理，
+    127.0.0.1、192.168.x.x 反而连不上——单实例检测、UPnP 端口映射都会失效。
+    """
+    req = urllib.request.Request(url, data=data, headers=headers or {})
+    return _no_proxy_opener.open(req, timeout=timeout)
+
+
 class NetworkError(Exception):
     pass
 

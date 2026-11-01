@@ -17,7 +17,7 @@ from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 from core import auth, installer, java as javamod, launch as launcher, live
-from core import modpack, updater
+from core import link, modpack, updater
 from core.config import CACHE_DIR, LOG_DIR, ROOT, config
 from core.manifest import fetch_manifest, get_version_json, list_local_versions, list_versions
 from core.paths import DATA_DIR, FROZEN, RES_DIR
@@ -103,12 +103,12 @@ class TaskManager:
         return True
 
     # ---------- 整合包 ----------
-    def start_pack(self, label: str, work) -> bool:
-        """通用任务壳：work(cancel) 里跑整合包的下载 + 安装。"""
+    def start_pack(self, label: str, work, kind: str = "modpack") -> bool:
+        """通用任务壳：work(cancel) 里跑下载 / 安装之类的活。"""
         if self.busy:
             return False
         self._cancel = threading.Event()
-        self._update(kind="modpack", version=label, phase="准备中", running=True,
+        self._update(kind=kind, version=label, phase="准备中", running=True,
                      message="", error="", progress=None, logs=[], result={},
                      started_at=time.time())
 
@@ -466,6 +466,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error(f"读取版本失败：{e}")
             return self._json({"ok": True, "versions": rows})
 
+        if path == "/api/link/state":
+            try:
+                with_public = (qs.get("public", ["1"])[0] or "1") != "0"
+                data = link.status(with_public=with_public)
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"读取联机信息失败：{e}")
+            data["easytier"] = link.easytier_local()
+            return self._json({"ok": True, **data})
+
+        if path == "/api/link/easytier":
+            try:
+                return self._json({"ok": True, "latest": link.easytier_latest(),
+                                   "local": link.easytier_local()})
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
+
         if path == "/api/login/state":
             return self._json({"ok": True, "account": auth.device_state(),
                                "config_account": config.data.get("account") or {}})
@@ -569,6 +585,62 @@ class Handler(BaseHTTPRequestHandler):
             if task.start_pack(title, work):
                 return self._json({"ok": True, "message": f"开始安装《{title}》"})
             return self._error("已有任务在进行中")
+
+        if path == "/api/link/map":
+            try:
+                port = int(body.get("port") or link.DEFAULT_PORT)
+            except (TypeError, ValueError):
+                return self._error("端口要填数字")
+            try:
+                res = link.map_port(port, (body.get("internal_ip") or "").strip())
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"端口映射失败：{e}")
+            if res.get("cgnat"):
+                return self._json({"ok": True, **res,
+                                   "warning": "公网地址属于运营商内网，外面可能连不进来"})
+            return self._json({"ok": True, **res})
+
+        if path == "/api/link/unmap":
+            try:
+                port = int(body.get("port") or link.DEFAULT_PORT)
+            except (TypeError, ValueError):
+                return self._error("端口要填数字")
+            try:
+                return self._json({"ok": True, **link.unmap_port(port)})
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"取消映射失败：{e}")
+
+        if path == "/api/link/room":
+            return self._json({"ok": True, "room": link.make_room()})
+
+        if path == "/api/link/easytier/download":
+            if task.busy:
+                return self._error("已有任务在进行中")
+
+            def work(cancel):
+                return link.download_easytier(emit=task._log,
+                                              progress=task._progress,
+                                              cancel=cancel)
+
+            if task.start_pack("EasyTier", work, kind="link"):
+                return self._json({"ok": True, "message": "开始下载 EasyTier 客户端"})
+            return self._error("已有任务在进行中")
+
+        if path == "/api/link/easytier/open":
+            import subprocess as sp
+
+            local = link.easytier_local()
+            target = local["gui"] or local["dir"]
+            if not local["installed"]:
+                return self._error("还没下载 EasyTier")
+            try:
+                if local["gui"]:
+                    sp.Popen([local["gui"]], close_fds=True)
+                else:
+                    os.startfile(local["dir"])  # type: ignore[attr-defined]
+                return self._json({"ok": True, "opened": target})
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"打开失败：{e}")
 
         if path == "/api/cancel":
             task.cancel()

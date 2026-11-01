@@ -65,8 +65,9 @@ def log_note(msg: str) -> None:
 def _ping(port: int, timeout: float = 0.3) -> Optional[dict]:
     """问一下端口上的服务，返回 /api/ping 的内容；不是我们的服务就 None。"""
     try:
-        with urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/api/ping", timeout=timeout) as r:
+        from core.net import open_local
+
+        with open_local(f"http://127.0.0.1:{port}/api/ping", timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
     except Exception:  # noqa: BLE001 - 端口没人监听会各种报错
         return None
@@ -170,8 +171,9 @@ def find_running(first: int = 8787, span: int = 20) -> Optional[dict]:
 def wake_running(port: int) -> bool:
     """让已经运行的实例把窗口显示出来。返回是否成功唤起窗口。"""
     try:
-        with urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/api/focus", timeout=1.5) as r:
+        from core.net import open_local
+
+        with open_local(f"http://127.0.0.1:{port}/api/focus", timeout=1.5) as r:
             return bool(json.loads(r.read().decode("utf-8")).get("focused"))
     except Exception:  # noqa: BLE001
         return False

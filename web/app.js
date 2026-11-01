@@ -86,6 +86,7 @@ function go(page) {
   if (page === "logs") refreshConsole(true);
   if (page === "settings") loadJava();
   if (page === "modpack") ensurePacks();
+  if (page === "link") loadLink();
 }
 
 $("#nav").addEventListener("click", (e) => {
@@ -399,7 +400,8 @@ function applyStatus(data) {
     const pct = Math.round((p.ratio || 0) * 100);
     $("#taskTitle").textContent = t.kind === "java" ? "下载 Java 运行时"
       : t.kind === "modpack" ? `安装整合包 ${t.version || ""}`
-        : t.kind === "login" ? "微软账号登录" : `下载 ${t.version}`;
+        : t.kind === "link" ? `下载 ${t.version || "组件"}`
+          : t.kind === "login" ? "微软账号登录" : `下载 ${t.version}`;
     $("#taskPercent").textContent = pct + "%";
     $("#taskFill").style.width = Math.max(2, pct) + "%";
     $("#taskSub").textContent = [
@@ -417,6 +419,7 @@ function applyStatus(data) {
       toast(t.kind === "modpack" ? "整合包安装完成" : "下载完成", "ok");
       if (t.result && t.result.note) toast(t.result.note, "err");
       if (t.kind === "modpack") go("versions");
+      if (t.kind === "link") loadLink();
     }
     loadLocal();
     loadVersions(false);
@@ -630,7 +633,6 @@ function fillSettings() {
   $("#setAutoJava").checked = !!c.auto_download_java;
   $("#setJvmArgs").value = c.jvm_args || "";
   $("#setGameArgs").value = c.game_args || "";
-  $("#setMsClient").value = c.ms_client_id || "";
   $("#setUpdateUrl").value = c.update_url || "";
   $("#setAutoCheck").checked = c.auto_check_update !== false;
   $("#setAutoDownload").checked = !!c.auto_download_update;
@@ -653,7 +655,6 @@ $("#saveSettings").addEventListener("click", async () => {
     auto_download_java: $("#setAutoJava").checked,
     jvm_args: $("#setJvmArgs").value.trim(),
     game_args: $("#setGameArgs").value.trim(),
-    ms_client_id: $("#setMsClient").value.trim(),
     update_url: $("#setUpdateUrl").value.trim(),
     auto_check_update: $("#setAutoCheck").checked,
     auto_download_update: $("#setAutoDownload").checked,
@@ -697,8 +698,6 @@ $("#updateChip").addEventListener("click", () => {
   startUpdate();
 });
 
-$("#msLoginBtn").addEventListener("click", () => openAccountModal("ms"));
-$("#offlineBtn").addEventListener("click", () => openAccountModal("offline"));
 
 /* ---------------- 账号 ---------------- */
 
@@ -725,7 +724,7 @@ function openAccountModal(branch) {
   const current = (state.config.account || {}).type;
   loginBranch = branch || (current === "microsoft" ? "ms" : "offline");
   $("#modalName").value = state.config.player_name || "Steve";
-  $("#modalMsClient").value = state.config.ms_client_id || $("#setMsClient").value || "";
+  $("#modalMsClient").value = state.config.ms_client_id || "";
   selectBranch(loginBranch);
   $("#accountModal").classList.add("show");
   if (loginBranch === "ms") { pollDevice(); startLoginPolling(); }
@@ -797,7 +796,6 @@ $("#modalMsLogin").addEventListener("click", async () => {
   try {
     await api("/api/account/microsoft", { method: "POST", body: JSON.stringify({ client_id: cid }) });
     state.config.ms_client_id = cid;
-    $("#setMsClient").value = cid;
     toast("已发起登录，按弹层里的代码在浏览器授权", "ok");
     startLoginPolling();
     setTimeout(pollDevice, 600);
@@ -848,7 +846,7 @@ window.addEventListener("keydown", (e) => {
 });
 
 const PAGE_TITLES = {
-  home: "主页", download: "下载", modpack: "整合包", versions: "版本",
+  home: "主页", download: "下载", modpack: "整合包", link: "联机", versions: "版本",
   settings: "设置", logs: "日志",
 };
 
@@ -1073,6 +1071,180 @@ async function uploadPack(file) {
     toast("导入失败：" + e.message, "err");
   }
 }
+
+
+/* ---------------- 联机 ---------------- */
+
+const linkState = { info: null, room: null, loaded: false };
+
+async function copyText(text, okMsg) {
+  if (!text) { toast("没有可复制的内容", "err"); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMsg || "已复制", "ok");
+  } catch (e) {
+    // 老内核 / 非安全上下文兜底
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); toast(okMsg || "已复制", "ok"); }
+    catch (_) { toast("复制失败，请手动选中", "err"); }
+    ta.remove();
+  }
+}
+
+async function loadLink() {
+  const lanBox = $("#linkLanList");
+  lanBox.innerHTML = '<span class="muted small">检测中…</span>';
+  try {
+    const data = await api("/api/link/state");
+    linkState.info = data;
+    linkState.loaded = true;
+    renderLink(data);
+  } catch (e) {
+    lanBox.innerHTML = `<span class="muted small">检测失败：${esc(e.message)}</span>`;
+  }
+}
+
+function renderLink(d) {
+  const port = ($("#linkPort").value || d.default_port || 25565).trim();
+  // --- 局域网
+  const ips = d.lan_ips || [];
+  if (!ips.length) {
+    $("#linkLanList").innerHTML = '<span class="muted small">没检测到局域网地址（可能没连 WiFi / 网线）</span>';
+  } else {
+    $("#linkLanList").innerHTML = ips.map((i) => `
+      <div class="kv-row">
+        <div>
+          <strong class="mono">${esc(i.ip)}:${esc(port)}</strong>
+          <span class="muted small">${esc(i.name || "")}</span>
+        </div>
+        <button class="btn btn-ghost btn-mini" data-copy="${esc(i.ip + ":" + port)}">复制</button>
+      </div>`).join("");
+    $("#linkLanList").querySelectorAll("[data-copy]").forEach((b) => {
+      b.addEventListener("click", () => copyText(b.dataset.copy, "已复制 " + b.dataset.copy));
+    });
+  }
+
+  // --- 网关状态
+  const gw = d.gateway || {};
+  const box = $("#linkGwStatus");
+  if (gw.found) {
+    box.className = "up-status ok";
+    box.innerHTML = gw.cg_nat
+      ? `<span class="small">路由器支持 UPnP，但公网地址是 <span class="mono">${esc(gw.external_ip)}</span>（运营商内网），映射了外面也进不来。改用下面的组网工具。</span>`
+      : `<span class="small">路由器支持 UPnP · 公网地址 <span class="mono">${esc(gw.external_ip || "读取失败")}</span></span>`;
+  } else {
+    box.className = "up-status err";
+    box.innerHTML = `<span class="small">${esc(gw.error || "没找到支持 UPnP 的路由器")}</span>`;
+  }
+
+  // --- 已有映射
+  const maps = gw.mappings || [];
+  if (maps.length) {
+    $("#linkPublicText").textContent = maps.map((m) => `${gw.external_ip}:${m.port}`).join("  ");
+    $("#linkPublicAddr").hidden = false;
+  }
+
+  // --- 组网工具
+  const et = d.easytier || {};
+  $("#linkEtOpen").hidden = !et.installed;
+  $("#linkEtState").textContent = et.installed
+    ? `已就绪：${et.gui || et.dir}`
+    : "还没下载。点「下载 EasyTier 客户端」会自动放到数据目录的 runtime/easytier 下。";
+
+  // 端口默认值：优先用游戏日志里抓到的
+  if (d.suggest_port && d.suggest_port.port && !linkState.portTouched) {
+    $("#linkPort").value = d.suggest_port.port;
+  } else if (!linkState.portTouched && !$("#linkPort").value) {
+    $("#linkPort").value = d.default_port || 25565;
+  }
+}
+
+$("#linkRefresh").addEventListener("click", () => loadLink());
+
+$("#linkMapBtn").addEventListener("click", async () => {
+  const port = parseInt($("#linkPort").value, 10);
+  if (!port) { toast("先填端口", "err"); return; }
+  const btn = $("#linkMapBtn");
+  btn.disabled = true;
+  btn.textContent = "处理中…";
+  try {
+    const r = await api("/api/link/map", { method: "POST", body: JSON.stringify({ port }) });
+    if (r.address) {
+      $("#linkPublicText").textContent = r.address;
+      $("#linkPublicAddr").hidden = false;
+      copyText(r.address, "已开放并复制地址：" + r.address);
+    } else {
+      toast("映射成功，但没读到公网地址", "err");
+    }
+    if (r.warning) toast(r.warning, "err");
+    loadLink();
+  } catch (e) {
+    toast(e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "开放到公网";
+  }
+});
+
+$("#linkUnmapBtn").addEventListener("click", async () => {
+  const port = parseInt($("#linkPort").value, 10);
+  if (!port) return;
+  try {
+    await api("/api/link/unmap", { method: "POST", body: JSON.stringify({ port }) });
+    toast(`已关闭 ${port} 的公网映射`, "ok");
+    $("#linkPublicAddr").hidden = true;
+    loadLink();
+  } catch (e) { toast(e.message, "err"); }
+});
+
+$("#linkCopyLan").addEventListener("click", () => {
+  const d = linkState.info;
+  if (!d || !(d.lan_ips || []).length) { toast("没有可复制的地址", "err"); return; }
+  const port = $("#linkPort").value || d.default_port;
+  copyText(d.lan_ips.map((i) => `${i.ip}:${port}`).join("\n"), "已复制局域网地址");
+});
+
+$("#linkCopyPublic").addEventListener("click", () => copyText($("#linkPublicText").textContent, "已复制公网地址"));
+
+$("#linkPort").addEventListener("input", () => { linkState.portTouched = true; });
+
+$("#linkRoomBtn").addEventListener("click", async () => {
+  try {
+    const { room } = await api("/api/link/room", { method: "POST", body: JSON.stringify({}) });
+    linkState.room = room;
+    $("#linkInvite").textContent = room.invite;
+    $("#linkInvite").hidden = false;
+    $("#linkInviteRow").hidden = false;
+    toast("已生成房间 " + room.code, "ok");
+  } catch (e) { toast(e.message, "err"); }
+});
+
+$("#linkCopyInvite").addEventListener("click", () => copyText($("#linkInvite").textContent, "邀请已复制，发给朋友"));
+
+$("#linkEtDownload").addEventListener("click", async () => {
+  const btn = $("#linkEtDownload");
+  btn.disabled = true;
+  try {
+    await api("/api/link/easytier/download", { method: "POST", body: JSON.stringify({}) });
+    $("#taskbar").classList.add("show");
+    toast("开始下载 EasyTier，进度见底部任务条", "ok");
+  } catch (e) {
+    toast(e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("#linkEtOpen").addEventListener("click", async () => {
+  try {
+    await api("/api/link/easytier/open", { method: "POST", body: JSON.stringify({}) });
+  } catch (e) { toast(e.message, "err"); }
+});
 
 /* ---------------- 启动 ---------------- */
 

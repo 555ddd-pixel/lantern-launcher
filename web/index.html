@@ -35,6 +35,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5"/><path d="M12 12v9"/></svg>
         <span>整合包</span>
       </button>
+      <button class="nav-item" data-page="link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M6.6 7.2L10 10.2M17.4 7.2L14 10.2M6.6 16.8L10 13.8M17.4 16.8L14 13.8"/></svg>
+        <span>联机</span>
+      </button>
       <button class="nav-item" data-page="versions">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
         <span>版本</span>
@@ -192,6 +196,70 @@
       <div class="list-foot" id="packCount"></div>
     </section>
 
+    <!-- 联机 -->
+    <section class="page" id="page-link">
+      <div class="page-head">
+        <div>
+          <h1>联机</h1>
+          <p class="muted">同一个 WiFi 直接用内网地址；跨网络靠端口映射或组网工具。</p>
+        </div>
+        <button class="btn btn-ghost" id="linkRefresh">重新检测</button>
+      </div>
+
+      <div class="link-grid">
+        <div class="panel">
+          <h2>本机地址</h2>
+          <div class="kv" id="linkLanList"><span class="muted small">检测中…</span></div>
+          <p class="muted small">同一个 WiFi 下，朋友在游戏里「直接连接」输这个地址就能进。</p>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="linkCopyLan">复制局域网地址</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>异地直连（端口映射）</h2>
+          <p class="muted small">让路由器把这个端口开放到公网，朋友用「公网 IP:端口」直连。不用装任何东西，但要求路由器开了 UPnP、且运营商给的是公网 IPv4。</p>
+          <div class="link-form">
+            <label class="field"><span>端口</span>
+              <input id="linkPort" type="number" min="1" max="65535" value="25565">
+            </label>
+            <button class="btn btn-primary" id="linkMapBtn">开放到公网</button>
+            <button class="btn btn-ghost" id="linkUnmapBtn">关闭映射</button>
+          </div>
+          <div class="up-status" id="linkGwStatus"><span class="muted small">检测中…</span></div>
+          <div class="link-addr" id="linkPublicAddr" hidden>
+            <span class="mono" id="linkPublicText">—</span>
+            <button class="btn btn-ghost btn-mini" id="linkCopyPublic">复制</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>异地联机（组网工具）</h2>
+          <p class="muted small">路由器不支持 UPnP、或者运营商只给了内网地址时，用 P2P 组网：双方装同一个客户端，填一样的网络名和密码，就能互相访问虚拟 IP。EasyTier 与「陶瓦联机」是同一套底子。</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="linkRoomBtn">生成房间</button>
+            <button class="btn btn-ghost" id="linkEtDownload">下载 EasyTier 客户端</button>
+            <button class="btn btn-ghost" id="linkEtOpen" hidden>打开客户端</button>
+          </div>
+          <pre class="link-invite" id="linkInvite" hidden></pre>
+          <div class="btn-row" id="linkInviteRow" hidden>
+            <button class="btn btn-ghost btn-mini" id="linkCopyInvite">复制邀请文字</button>
+          </div>
+          <p class="muted small" id="linkEtState">—</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>朋友怎么进来</h2>
+        <ol class="steps">
+          <li>你在游戏里开好世界 → <span class="kbd">Esc</span> → <span class="kbd">对局域网开放</span>，聊天栏会显示「本地游戏已在端口 5xxxx 上开启」，把那个端口填进上面的输入框。</li>
+          <li>点「开放到公网」，成功后复制显示的 <span class="mono">公网IP:端口</span> 发给朋友。</li>
+          <li>朋友在游戏里「多人游戏 → 直接连接」粘贴这个地址。</li>
+          <li>用组网工具时：双方填同一个网络名和密码，朋友在游戏里直接连你的虚拟 IP（EasyTier 窗口里能看到自己的虚拟地址）。</li>
+        </ol>
+      </div>
+    </section>
+
     <!-- 版本 -->
     <section class="page" id="page-versions">
       <div class="page-head">
@@ -322,18 +390,6 @@
           </div>
         </div>
 
-        <div class="panel">
-          <h2>正版登录</h2>
-          <p class="muted small">点「开始登录」会打开登录窗口，在「微软正版 / 离线」两个分支里选。正版走设备码，需要一个 Azure 应用的公共客户端 ID（自建应用，免费）。</p>
-          <label class="field">
-            <span>Azure 客户端 ID</span>
-            <input id="setMsClient" type="text" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
-          </label>
-          <div class="btn-row">
-            <button class="btn btn-primary" id="msLoginBtn">开始登录</button>
-            <button class="btn btn-ghost" id="offlineBtn">切换为离线账号</button>
-          </div>
-        </div>
       </div>
 
       <div class="save-bar">

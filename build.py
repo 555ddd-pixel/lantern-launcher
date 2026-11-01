@@ -131,9 +131,9 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "修复：第二次启动时可能误把自己先前的后台实例当成「已在运行」，"
-                 "结果打开网页而不是软件窗口；现在改用实例记录 + 进程校验，"
-                 "只有真正开着窗口的实例才会被唤起。",
+        "notes": "新增「联机」页：局域网地址一键复制、UPnP 端口映射开放到公网、"
+                 "公网不可达时给出 P2P 组网方案并支持一键下载 EasyTier；"
+                 "设置页移除重复的正版登录入口（登录弹层里已有）。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {

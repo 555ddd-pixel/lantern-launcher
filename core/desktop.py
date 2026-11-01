@@ -72,8 +72,9 @@ def _clamp(geo: dict) -> dict:
 
 def _ping(port: int, timeout: float = 0.4) -> bool:
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/ping",
-                                    timeout=timeout) as r:
+        from .net import open_local
+
+        with open_local(f"http://127.0.0.1:{port}/api/ping", timeout=timeout) as r:
             return b'"ok"' in r.read()
     except Exception:  # noqa: BLE001
         return False

@@ -34,6 +34,7 @@ PCL2（Plain Craft Launcher 2，作者 龙腾猫跃）是我这次调研的参�
 - **Java 智能匹配**：扫描本机所有 JVM，按版本要求（Java 8 / 17 / 21 / 25…）挑选；缺失时自动下载 Mojang 官方运行时（BMCLAPI 镜像，数秒即完成）
 - **两种参数格式**：1.13+ 的 `arguments` 对象数组，以及 1.6–1.12 的 `minecraftArguments` 字符串，远古版本也能启动
 - **登录分支**：登录窗口里先选「离线」或「微软正版」，正版的设备码与登录进度直接显示在弹层里（需自备 Azure 客户端 ID）
+- **联机**：本机局域网地址一键复制；UPnP 端口映射把「对局域网开放」的端口开到公网；不支持 UPnP / 运营商内网时给出 P2P 组网方案（可一键下载 EasyTier 客户端）
 - **整合包**：实时搜索网络整合包（Modrinth），一键下载 + 装原版 + 装 loader + 铺模组；也支持把 `.mrpack` / CurseForge `.zip` **拖进窗口**自动导入
 - **老版本资源兼容**：自动处理 `virtual` / `map_to_resources` 的 pre-1.6 资源布局
 - **超长 classpath 兜底**：超过 Windows 命令行 32K 上限时切换 Java 9+ 的 `@argfile`
@@ -67,6 +68,28 @@ PCL2（Plain Craft Launcher 2，作者 龙腾猫跃）是我这次调研的参�
 - CurseForge `.zip`：读 `manifest.json`，导入 `overrides/` 与包里自带的 mods；如果该包只写了 `projectID/fileID` 而没有实际 mods 文件，则补全需要 CurseForge API Key，日志里会明确提示
 
 自检：`python tools/test_modpack.py`（解析真实 .mrpack、生成 Fabric 安装计划、跑一遍实例落盘并在启动参数里验证 `--gameDir`）
+
+---
+
+## 联机
+
+「联机」页把三种情况的入口放在一起：
+
+| 场景 | 做法 |
+| --- | --- |
+| 同一个 WiFi | 本机卡片里直接复制 `192.168.x.x:端口` 给朋友，游戏内「直接连接」 |
+| 异地、路由器支持 UPnP | 填端口 → 「开放到公网」→ 复制 `公网IP:端口` 给朋友；点「关闭映射」会从路由器上撤掉 |
+| 路由器没 UPnP / 运营商给内网地址 | 「生成房间」拿到网络名 + 密码，双方装 EasyTier（可点按钮自动下载），填一样的网络名和密码即可互相访问虚拟 IP |
+
+实现细节：
+
+- UPnP 走标准库：SSDP 组播找 IGD → 读设备描述 → SOAP `AddPortMapping` / `DeletePortMapping` / `GetExternalIPAddress`，不依赖任何第三方组件，也不需要管理员权限
+- 发现顺序做了三层兜底：上次成功过的控制地址（缓存到 `.cache/upnp.json`）→ SSDP 组播 → 直接按常见地址（`rootDesc.xml` / `description.xml`）敲默认网关
+- 公网地址落在 `100.64.0.0/10`（CGNAT）或 RFC1918 时直接判定「外面进不来」，把用户引到组网方案，而不是给一个假地址
+- 访问本机与局域网（`127.0.0.1`、`192.168.x.x`）的请求强制绕开系统代理——用户开着代理软件时，`HTTP_PROXY` 会把这类请求也吞掉，单实例检测和 UPnP 都会失效
+- 端口默认值会从最近一次游戏日志里抓「本地游戏已在端口 XXXX 上开启」
+
+自检：`python tools/test_link.py`（起一个假路由器，跑通描述解析、公网地址、加/删映射、映射列表、CGNAT 识别、房间参数）
 
 ---
 
