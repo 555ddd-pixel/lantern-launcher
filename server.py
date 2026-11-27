@@ -17,7 +17,7 @@ from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 from core import auth, content, installer, java as javamod, launch as launcher, live
-from core import link, modpack, mslogin, skin, updater
+from core import diagnose, link, modpack, mslogin, skin, sysinfo, updater
 from core import net
 from core.config import CACHE_DIR, LOG_DIR, ROOT, config
 from core.manifest import fetch_manifest, get_version_json, list_local_versions, list_versions
@@ -459,6 +459,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"versions": out})
         if path == "/api/config":
             return self._json({"config": config.data})
+        if path == "/api/sysinfo":
+            return self._json(sysinfo.info())
         if path == "/api/java":
             runtimes = javamod.find_all()
             return self._json({
@@ -1029,6 +1031,32 @@ class Handler(BaseHTTPRequestHandler):
             from core import net
             net.set_proxy(str(config["net_proxy"] or ""))
             return self._json({"ok": True, "config": config.data})
+
+        if path == "/api/config/optimize":
+            profile = str(body.get("profile") or config["memory_profile"] or "light")
+            mem = sysinfo.memory()
+            target = sysinfo.recommend(mem["total_mb"], profile)
+            custom = body.get("memory_mb")
+            if custom is not None:
+                try:
+                    target = int(custom)
+                except Exception:
+                    pass
+            target = max(512, min(sysinfo.safe_max(mem["total_mb"]), target))
+            config.update({
+                "memory_profile": profile,
+                "memory_mb": target,
+                "min_memory_mb": sysinfo.min_heap(target),
+            })
+            return self._json({
+                "ok": True, "config": config.data, "applied_mb": target,
+                "recommend": sysinfo.recommend_all(mem["total_mb"]),
+                "total_mb": mem["total_mb"],
+            })
+
+        if path == "/api/logs/diagnose":
+            text = body.get("text") or diagnose.latest_log_text()
+            return self._json(diagnose.analyze(text))
 
         if path == "/api/java/download":
             try:

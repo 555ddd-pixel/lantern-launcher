@@ -2,7 +2,7 @@
 """启动器自身的版本信息。改版本号只需要改这里。"""
 
 APP_NAME = "老张的minecraft启动器"
-VERSION = "1.9.2"
+VERSION = "2.0.0"
 BUILD = "2026-11-27"
 CHANNEL = "stable"
 

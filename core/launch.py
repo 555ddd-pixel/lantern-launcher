@@ -172,12 +172,21 @@ def prepare(
         "quickPlayRealms": "",
     }
 
-    # ---- JVM 参数 ----
+    # ---- JVM 参数：内存与 GC（PCL 式内存优化） ----
     jvm_args: list[str] = [
         f"-Xmx{int(config['memory_mb'])}M",
         f"-Xms{int(config['min_memory_mb'])}M",
     ]
-    if runtime.major >= 9:
+    gc = str(config["gc_policy"] or "auto")
+    if gc == "g1" and runtime.major >= 9:
+        jvm_args += ["-XX:+UseG1GC", "-XX:+ParallelRefProcEnabled",
+                     "-XX:MaxGCPauseMillis=50"]
+    elif gc == "zgc" and runtime.major >= 11:
+        jvm_args += ["-XX:+UseZGC", "-XX:+ParallelRefProcEnabled",
+                     "-XX:MaxGCPauseMillis=50"]
+    elif gc == "parallel":
+        jvm_args += ["-XX:+UseParallelGC", "-XX:+ParallelRefProcEnabled"]
+    elif gc == "auto" and runtime.major >= 9:
         jvm_args += ["-XX:+UseG1GC", "-XX:+ParallelRefProcEnabled",
                      "-XX:MaxGCPauseMillis=50"]
     jvm_args += [
@@ -221,8 +230,11 @@ def prepare(
             "--userType", "${user_type}",
         ], ctx)
 
-    game_args += ["--width", str(config["window_width"]),
-                  "--height", str(config["window_height"])]
+    if config["fullscreen"]:
+        game_args += ["--fullscreen"]
+    else:
+        game_args += ["--width", str(config["window_width"]),
+                      "--height", str(config["window_height"])]
     if config["game_args"]:
         game_args += _split_args(config["game_args"])
 
@@ -283,6 +295,23 @@ class GameProcess:
         return self.proc.poll() is None
 
 
+_PRIORITY_CLASSES = {"low": 0x00004000, "high": 0x00008000}
+
+
+def _apply_priority(proc: subprocess.Popen) -> None:
+    """按配置调整游戏进程优先级；只用「低于/高于正常」，不碰实时优先级。"""
+    if os.name != "nt":
+        return
+    cls = _PRIORITY_CLASSES.get(str(config["process_priority"] or "normal"))
+    if not cls:
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetPriorityClass(proc.handle, cls)
+    except Exception:
+        pass  # 优先级的失败不影响游戏运行
+
+
 def launch(spec: LaunchSpec,
            on_line: Optional[Callable[[str], None]] = None) -> GameProcess:
     flags = 0
@@ -297,6 +326,7 @@ def launch(spec: LaunchSpec,
         )
     except OSError as e:
         raise LaunchError(f"无法启动 Java 进程：{e}") from e
+    _apply_priority(proc)
 
     gp = GameProcess(proc, spec)
     spec.log_file.parent.mkdir(parents=True, exist_ok=True)

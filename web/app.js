@@ -89,7 +89,7 @@ function go(page) {
   $(".main").scrollTop = 0;
   document.title = (PAGE_TITLES[page] ? PAGE_TITLES[page] + " · " : "") + APP_TITLE;
   if (page === "logs") refreshConsole(true);
-  if (page === "settings") loadJava();
+  if (page === "settings") { loadJava(); loadSysInfo(); }
   if (page === "skin") fillSkinHint();
   if (page === "skinstation" && !ssState.galleryLoaded) {
     ssState.galleryLoaded = true;
@@ -1234,6 +1234,120 @@ $("#clearLogs").addEventListener("click", () => {
   state.lastConsoleSig = "";
 });
 
+/* ---------------- 设置中心：系统信息与内存优化 ---------------- */
+
+let sysInfo = null;
+let memProfile = "light";
+
+function fmtMem(mb) {
+  return mb >= 1024 ? (mb / 1024).toFixed(1).replace(/\.0$/, "") + " GB" : mb + " MB";
+}
+
+function paintMemory(mb) {
+  const safe = sysInfo ? sysInfo.safe_max_mb : 8192;
+  const value = Math.max(512, Math.min(parseInt(mb, 10) || 2048, safe));
+  $("#memSlider").value = String(value);
+  $("#setMemory").value = String(value);
+  $("#memCurrentText").textContent = String(value);
+  const fill = $("#memMeterFill");
+  fill.style.width = Math.max(2, Math.min(100, value / safe * 100)) + "%";
+  fill.classList.toggle("over", value > safe);
+  const rec = sysInfo && sysInfo.recommend ? sysInfo.recommend[memProfile] : null;
+  const hint = $("#memHint");
+  if (rec && value !== rec) {
+    hint.textContent = `该场景推荐 ${rec} MB，当前${value > rec ? "偏高，可能影响系统流畅度" : "偏低，模组多时可能内存不足"}`;
+  } else if (rec) {
+    hint.textContent = "当前正好是该场景的推荐值";
+  } else {
+    hint.textContent = "选一个预设，或手动拖动滑块";
+  }
+  $$(".mem-preset").forEach((b) => b.classList.toggle("active", b.dataset.profile === memProfile));
+}
+
+async function loadSysInfo() {
+  try {
+    sysInfo = await api("/api/sysinfo");
+    const r = sysInfo.recommend || {};
+    $("#sysMemInfo").textContent = `物理内存 ${fmtMem(sysInfo.total_mb)} · 可用 ${fmtMem(sysInfo.avail_mb)} · ${sysInfo.cpu_count} 线程`;
+    $("#memTotalText").textContent = `物理内存 ${fmtMem(sysInfo.total_mb)}`;
+    $("#memSafeLabel").textContent = `安全上限 ${fmtMem(sysInfo.safe_max_mb)}`;
+    $("#recVanilla").textContent = (r.vanilla || 0) + " MB";
+    $("#recLight").textContent = (r.light || 0) + " MB";
+    $("#recHeavy").textContent = (r.heavy || 0) + " MB";
+    $("#memSlider").max = String(sysInfo.safe_max_mb || 8192);
+    memProfile = state.config.memory_profile || "light";
+    paintMemory(state.config.memory_mb || 2048);
+  } catch (e) {
+    $("#sysMemInfo").textContent = "读取物理内存失败：" + e.message;
+  }
+}
+
+$("#settingsTabs").addEventListener("click", (e) => {
+  const b = e.target.closest(".stab");
+  if (!b) return;
+  $$(".stab").forEach((x) => x.classList.toggle("active", x === b));
+  const el = document.getElementById(b.dataset.target);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+$("#memPresets").addEventListener("click", (e) => {
+  const b = e.target.closest(".mem-preset");
+  if (!b) return;
+  memProfile = b.dataset.profile;
+  const rec = sysInfo && sysInfo.recommend ? sysInfo.recommend[memProfile] : null;
+  paintMemory(rec || $("#setMemory").value);
+});
+
+$("#memSlider").addEventListener("input", (e) => paintMemory(e.target.value));
+$("#setMemory").addEventListener("input", (e) => paintMemory(e.target.value));
+
+$("#optimizeMemBtn").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/config/optimize", {
+      method: "POST", body: JSON.stringify({ profile: memProfile })
+    });
+    state.config = r.config;
+    paintMemory(r.applied_mb);
+    $("#statMemory").textContent = r.applied_mb + " MB";
+    $("#saveHint").textContent = "内存已优化 " + new Date().toLocaleTimeString();
+    const name = memProfile === "heavy" ? "大型整合包" : memProfile === "vanilla" ? "原版" : "少量模组";
+    toast(`按「${name}」优化为 ${r.applied_mb} MB`, "ok");
+  } catch (e) { toast(e.message, "err"); }
+});
+
+$("#goMemoryTune").addEventListener("click", () => {
+  go("settings");
+  setTimeout(() => {
+    $$(".stab").forEach((x) => x.classList.toggle("active", x.dataset.target === "sec-perf"));
+    const el = document.getElementById("sec-perf");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 50);
+});
+
+/* ---------------- 崩溃日志诊断 ---------------- */
+
+$("#diagnoseBtn").addEventListener("click", async () => {
+  const btn = $("#diagnoseBtn");
+  btn.disabled = true;
+  btn.textContent = "分析中…";
+  try {
+    const d = await api("/api/logs/diagnose", { method: "POST", body: "{}" });
+    $("#diagSummary").textContent = d.summary || "分析完成";
+    $("#diagCause").hidden = !d.cause;
+    $("#diagCause").textContent = d.cause ? "崩溃源头：" + d.cause : "";
+    $("#diagIssues").innerHTML = (d.issues || []).map((i) => `
+      <div class="diag-issue ${esc(i.level)}">
+        <b>${esc(i.title)}</b>
+        <p>${esc(i.advice)}</p>
+        ${i.evidence ? `<code>${esc(i.evidence)}</code>` : ""}
+      </div>`).join("") || `<div class="muted small">${esc(d.summary || "")}</div>`;
+    $("#diagPanel").hidden = false;
+  } catch (e) { toast(e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = "分析崩溃原因"; }
+});
+
+$("#diagClose").addEventListener("click", () => { $("#diagPanel").hidden = true; });
+
 /* ---------------- 设置 ---------------- */
 
 function fillSettings() {
@@ -1258,6 +1372,9 @@ function fillSettings() {
   $("#setNetProxy").value = c.net_proxy || "";
   $("#packSource").value = c.pack_source || "auto";
   $("#modShopSource").value = c.pack_source || "auto";
+  $("#setGcPolicy").value = c.gc_policy || "auto";
+  $("#setPriority").value = c.process_priority || "normal";
+  $("#setFullscreen").checked = !!c.fullscreen;
 }
 
 $("#saveSettings").addEventListener("click", async () => {
@@ -1282,6 +1399,9 @@ $("#saveSettings").addEventListener("click", async () => {
     close_to_tray: $("#setCloseToTray").checked,
     pack_source: $("#setPackSource").value,
     net_proxy: $("#setNetProxy").value.trim(),
+    gc_policy: $("#setGcPolicy").value,
+    process_priority: $("#setPriority").value,
+    fullscreen: $("#setFullscreen").checked,
   };
   try {
     const { config } = await api("/api/config", { method: "POST", body: JSON.stringify({ config: patch }) });

@@ -26,6 +26,10 @@ DEFAULTS = {
     "auto_download_java": True,
     "memory_mb": 2048,
     "min_memory_mb": 512,
+    "memory_profile": "light",     # vanilla | light | heavy（内存优化预设）
+    "gc_policy": "auto",           # auto | g1 | zgc | parallel
+    "process_priority": "normal",  # low | normal | high
+    "fullscreen": False,           # 游戏启动即全屏
     "player_name": "Steve",
     "account": {"type": "offline", "name": "Steve", "uuid": "", "access_token": ""},
     "jvm_args": "",
@@ -107,6 +111,17 @@ class Config:
                         self._data[k] = max(512, min(65536, int(v)))
                     except Exception:
                         pass
+                elif k == "memory_profile":
+                    if v in ("vanilla", "light", "heavy"):
+                        self._data[k] = v
+                elif k == "gc_policy":
+                    if v in ("auto", "g1", "zgc", "parallel"):
+                        self._data[k] = v
+                elif k == "process_priority":
+                    if v in ("low", "normal", "high"):
+                        self._data[k] = v
+                elif k == "fullscreen":
+                    self._data[k] = bool(v)
                 elif k == "concurrent":
                     try:
                         self._data[k] = max(1, min(64, int(v)))
