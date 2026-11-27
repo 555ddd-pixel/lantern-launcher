@@ -1,13 +1,13 @@
 {
-  "version": "1.9.0",
+  "version": "1.9.1",
   "published": "2026-11-27",
-  "notes": "新增「皮肤」页：查任意正版玩家的皮肤，正版账号可以直接换肤（宽臂/细臂）；主页改成启动面板，新增「检查新版」一键查 Mojang 清单；界面整体收紧更像桌面软件。",
+  "notes": "启动面板改为双区卡片：左侧版本信息与玩家皮肤卡，右侧启动按钮与检查新版，版本号旁标注正式版/快照/加载器类型；布局更清晰。",
   "min_version": "1.0.0",
   "files": {
     "windows-x64": {
-      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.9.0/LanternLauncher.exe",
-      "size": 28058880,
-      "sha1": "e08bb754dc409c482ab5a684ab553256a034a9e1"
+      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.9.1/LanternLauncher.exe",
+      "size": 28059289,
+      "sha1": "6adff81cc5d839c5b34657547b49c3a7e2891d2b"
     }
   }
 }

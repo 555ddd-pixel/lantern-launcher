@@ -131,8 +131,8 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "新增「皮肤」页：查任意正版玩家的皮肤，正版账号可以直接换肤（宽臂/细臂）；"
-                 "主页改成启动面板，新增「检查新版」一键查 Mojang 清单；界面整体收紧更像桌面软件。",
+        "notes": "启动面板改为双区卡片：左侧版本信息与玩家皮肤卡，右侧启动按钮与检查新版，"
+                 "版本号旁标注正式版/快照/加载器类型；布局更清晰。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {
