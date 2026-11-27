@@ -131,9 +131,8 @@ def write_manifest(exe: Path) -> Path:
     manifest = {
         "version": VERSION,
         "published": BUILD,
-        "notes": "自动更新不再依赖 update.json：发版时忘了传清单也能通过 GitHub API "
-                 "拿到最新版本号和 exe 直链，老客户端不会被卡在旧版本；"
-                 "清单存在时依旧优先用清单（可校验 sha1）。",
+        "notes": "新增「皮肤」页：查任意正版玩家的皮肤，正版账号可以直接换肤（宽臂/细臂）；"
+                 "主页改成启动面板，新增「检查新版」一键查 Mojang 清单；界面整体收紧更像桌面软件。",
         "min_version": "1.0.0",
         "files": {
             "windows-x64": {

@@ -89,6 +89,7 @@ function go(page) {
   document.title = (PAGE_TITLES[page] ? PAGE_TITLES[page] + " · " : "") + APP_TITLE;
   if (page === "logs") refreshConsole(true);
   if (page === "settings") loadJava();
+  if (page === "skin") fillSkinHint();
   if (page === "modpack") ensurePacks();
   if (page === "mods") loadMods();
   if (page === "link") loadLink();
@@ -99,7 +100,6 @@ $("#nav").addEventListener("click", (e) => {
   if (btn) go(btn.dataset.page);
 });
 $("#goVersions").addEventListener("click", () => go("versions"));
-$("#heroDownload").addEventListener("click", () => go("download"));
 $("#heroLaunch").addEventListener("click", () => {
   const target = state.gameRunning ? null : (state.local[0] ? state.local[0].id : null);
   if (!target) { go("download"); toast("先下载一个版本吧", "err"); return; }
@@ -165,19 +165,20 @@ function renderHome() {
   const quick = $("#quickList");
   if (!installed.length) {
     quick.innerHTML = `<div class="empty">还没有安装任何版本，去「下载」页面挑一个吧。</div>`;
-    $("#heroTitle").textContent = "开始你的世界";
+    $("#heroTitle").textContent = "尚未安装版本";
     $("#heroSub").textContent = latest
-      ? `最新正式版 ${latest} 还没下载，点右侧按钮开始。`
-      : "选择任意 Minecraft 版本，一键下载并启动。";
+      ? `最新正式版是 ${latest}，去「下载」页面装一个。`
+      : "读取 Mojang 清单后就能下载。";
     $("#heroLaunch").disabled = true;
-    $("#heroKicker").textContent = "准备就绪";
+    $("#heroKicker").textContent = "未安装";
+    renderLaunchPlayer();
     return;
   }
   $("#heroLaunch").disabled = false;
   const first = installed[0];
   $("#heroTitle").textContent = first.id;
-  $("#heroKicker").textContent = state.gameRunning ? "游戏运行中" : "可以启动";
-  $("#heroSub").textContent = `Java ${first.java} · ${fmtBytes(first.size)} · ${first.loader || "原版"}`;
+  $("#heroKicker").textContent = state.gameRunning ? "运行中" : "";
+  $("#heroSub").textContent = `${first.loader || "原版"} · Java ${first.java} · ${fmtBytes(first.size)}`;
 
   quick.innerHTML = installed.slice(0, 5).map((v) => `
     <div class="quick-item">
@@ -192,6 +193,23 @@ function renderHome() {
   quick.querySelectorAll("[data-play]").forEach((b) => {
     b.addEventListener("click", () => launchVersion(b.dataset.play));
   });
+  renderLaunchPlayer();
+}
+
+/* 主页右下角的玩家卡：头像 + 名字 + 皮肤入口 */
+function renderLaunchPlayer() {
+  const acc = state.config.account || {};
+  const name = acc.name || state.config.player_name || "Steve";
+  $("#lpPlayerName").textContent = name;
+  $("#lpPlayerType").textContent = acc.type === "microsoft" ? "微软正版" : "离线登录";
+  const face = $("#lpFace");
+  if (acc.type === "microsoft" && acc.uuid) {
+    face.hidden = false;
+    drawSkinCanvas(face, `/api/skin/uuid-avatar?uuid=${encodeURIComponent(acc.uuid)}`, "face");
+  } else {
+    face.hidden = true;
+    face.style.background = "";
+  }
 }
 
 /* ---------------- 下载页 ---------------- */
@@ -1358,6 +1376,7 @@ function renderAccount() {
   } else {
     av.style.backgroundImage = "";
   }
+  renderLaunchPlayer();
 }
 
 let loginBranch = "offline";
@@ -1522,7 +1541,7 @@ window.addEventListener("keydown", (e) => {
 
 const PAGE_TITLES = {
   home: "主页", download: "下载", modpack: "整合包", mods: "模组", link: "联机",
-  versions: "版本", settings: "设置", logs: "日志",
+  skin: "皮肤", versions: "版本", settings: "设置", logs: "日志",
 };
 
 
@@ -1957,6 +1976,193 @@ $("#linkEtOpen").addEventListener("click", async () => {
   } catch (e) { toast(e.message, "err"); }
 });
 
+/* ---------------- 皮肤 ---------------- */
+
+const skinState = { info: null, variant: "classic" };
+
+function skinImgUrl(url) { return "/api/skin/image?url=" + encodeURIComponent(url); }
+
+/* 把 64x64 / 64x32 皮肤按 Minecraft 材质布局画成头像或正面全身 */
+function drawSkinCanvas(canvas, url, mode, slim = false) {
+  const img = new Image();
+  img.onerror = () => { canvas.hidden = true; };
+  img.onload = () => {
+    canvas.hidden = false;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let s = 0;
+    const old = img.height === 32;   // 64x32 的老版皮肤：左臂左腿要镜像右臂右腿
+    const P = (sx, sy, sw, sh, dx, dy, flip = false) => {
+      const dw = sw * s, dh = sh * s;
+      if (!flip) { ctx.drawImage(img, sx, sy, sw, sh, dx * s, dy * s, dw, dh); return; }
+      ctx.save();
+      ctx.translate((dx + sw) * s, dy * s);
+      ctx.scale(-1, 1);
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
+      ctx.restore();
+    };
+    if (mode === "face") {
+      s = canvas.width / 8;
+      P(8, 8, 8, 8, 0, 0);       // 脸
+      P(40, 8, 8, 8, 0, 0);      // 帽子层（透明部分不遮挡）
+      return;
+    }
+    s = canvas.width / 16;
+    const aw = slim ? 3 : 4;     // 手臂宽：slim 细臂 3px，classic 宽臂 4px
+    P(20, 20, 8, 12, 4, 8);                        // 身体
+    P(4, 20, 4, 12, 4, 20);                        // 右腿
+    if (old) P(4, 20, 4, 12, 8, 20, true);
+    else P(20, 52, 4, 12, 8, 20);                  // 左腿
+    if (old) P(44, 20, 4, 12, 16 - 4, 8, true);
+    else P(36, 52, aw, 12, 16 - aw, 8);            // 左臂
+    P(44, 20, aw, 12, 0, 8);                       // 右臂
+    P(40, 8, 8, 8, 4, 0);                          // 头 + 帽子层
+    P(8, 8, 8, 8, 4, 0);
+  };
+  img.src = url;
+}
+
+async function lookupSkin() {
+  const name = $("#skinQuery").value.trim();
+  if (!name) { toast("先填要查的玩家名", "err"); return; }
+  const btn = $("#skinLookupBtn");
+  btn.disabled = true;
+  $("#skinInfo").innerHTML = '<span class="muted">正在查询…</span>';
+  try {
+    const { skin } = await api("/api/skin/preview", {
+      method: "POST", body: JSON.stringify({ name }),
+    });
+    skinState.info = skin;
+    renderSkinStage(skin);
+  } catch (e) {
+    skinState.info = null;
+    $("#skinInfo").innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    for (const id of ["skinFace", "skinBody"]) {
+      const c = document.getElementById(id);
+      c.getContext("2d").clearRect(0, 0, c.width, c.height);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderSkinStage(s) {
+  const slim = s.model === "slim";
+  const src = s.skin_url
+    ? skinImgUrl(s.skin_url)
+    : (s.uuid ? skinImgUrl(`https://crafatar.com/skins/${s.uuid.replace(/-/g, "")}`) : "");
+  if (src) {
+    drawSkinCanvas($("#skinFace"), src, "face");
+    drawSkinCanvas($("#skinBody"), src, "body", slim);
+  }
+  $("#skinInfo").innerHTML = `
+    <div><strong>${esc(s.name)}</strong>${s.uuid ? ` <span class="mono muted">${esc(s.uuid)}</span>` : ""}</div>
+    <div class="muted">手臂模型：${s.model === "slim" ? "细臂（Alex 型）" : "宽臂（Steve 型）"}${s.cape_url ? " · 有披风" : ""}</div>
+    <div class="muted">来源：${esc(s.source || "")}${s.note ? " · " + esc(s.note) : ""}</div>`;
+}
+
+async function changeSkin(run) {
+  const box = $("#skinSetStatus");
+  try {
+    box.innerHTML = '<span class="muted">正在向 Mojang 官方提交…</span>';
+    await run();
+    box.innerHTML = '<span class="ok">换肤成功。改动几分钟内同步，进游戏按 F5 看自己。</span>';
+    toast("换肤成功", "ok");
+  } catch (e) {
+    box.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    toast(e.message, "err");
+  }
+}
+
+function fillSkinHint() {
+  const acc = state.config.account || {};
+  const hint = $("#skinAccountHint");
+  if (acc.type === "microsoft" && acc.uuid) {
+    hint.textContent = `当前账号：${acc.name}（微软正版），可以直接换肤。`;
+    $("#skinQuery").value = $("#skinQuery").value || acc.name;
+  } else {
+    hint.textContent = `当前是离线模式（${acc.name || state.config.player_name || "Steve"}）。换肤需要微软正版账号；查看别人的皮肤不受影响。`;
+    $("#skinQuery").value = $("#skinQuery").value || "Notch";
+  }
+}
+
+$("#skinLookupBtn").addEventListener("click", lookupSkin);
+$("#skinQuery").addEventListener("keydown", (e) => { if (e.key === "Enter") lookupSkin(); });
+
+$$("#skinVariantRow .tab").forEach((b) => b.addEventListener("click", () => {
+  skinState.variant = b.dataset.variant;
+  $$("#skinVariantRow .tab").forEach((x) => x.classList.toggle("active", x === b));
+}));
+
+$("#skinFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const buf = new Uint8Array(await f.arrayBuffer());
+  await changeSkin(async () => {
+    const r = await fetch(`/api/skin/upload?variant=${skinState.variant}`, {
+      method: "POST", body: buf, headers: { "X-Filename": "skin.png" },
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || `换肤失败（${r.status}）`);
+  });
+  e.target.value = "";
+});
+
+$("#skinUrlBtn").addEventListener("click", () => {
+  const url = $("#skinUrl").value.trim();
+  if (!url) { toast("先填皮肤图片的直链", "err"); return; }
+  changeSkin(() => api("/api/skin/set", {
+    method: "POST", body: JSON.stringify({ url, variant: skinState.variant }),
+  }));
+});
+
+$("#skinOpenSkinSite").addEventListener("click", () =>
+  window.open("https://www.minecraft.net/zh-hans/profile", "_blank"));
+
+$("#lpSkinLink").addEventListener("click", () => {
+  const acc = state.config.account || {};
+  $("#skinQuery").value = acc.name || state.config.player_name || "Notch";
+  go("skin");
+  lookupSkin();
+});
+
+/* ---------------- 一键检查 Mojang 新版本 ---------------- */
+
+async function checkLiveNow(btn) {
+  if (!btn) return;
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = "检查中…";
+  try {
+    const { new: fresh, live } = await api("/api/live/check", {
+      method: "POST", body: "{}",
+    });
+    $("#liveCheckText").textContent = live.last_check
+      ? `清单检查 ${new Date(live.last_check * 1000).toLocaleTimeString()}`
+      : "";
+    if (fresh && fresh.length) {
+      const names = fresh.slice(0, 4).map((v) => v.id).join("、");
+      toast(`Mojang 出新版本了：${names}，列表已刷新`, "ok");
+      state.liveSeen = 0;
+      await loadVersions(true);
+      go("download");
+    } else if (live.error) {
+      toast("检查失败：" + live.error, "err");
+    } else {
+      toast("清单没有变化，已是最新", "ok");
+    }
+  } catch (e) {
+    toast("检查失败：" + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+$("#checkLiveBtn").addEventListener("click", (e) => checkLiveNow(e.currentTarget));
+$("#checkLiveBtn2").addEventListener("click", (e) => checkLiveNow(e.currentTarget));
+
 /* ---------------- 启动 ---------------- */
 
 window.addEventListener("hashchange", () => go(location.hash.replace("#", "")));
@@ -1969,6 +2175,8 @@ window.addEventListener("hashchange", () => go(location.hash.replace("#", "")));
     poll();
     connectStream();
     await Promise.all([loadVersions(false), loadLocal()]);
+    // 启动后自动查一次 Mojang 清单（后台跑，不挡界面）
+    setTimeout(() => checkLiveNow($("#checkLiveBtn")), 6000);
   } catch (e) {
     toast("初始化失败：" + e.message, "err");
   }

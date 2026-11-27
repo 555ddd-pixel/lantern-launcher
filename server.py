@@ -17,7 +17,8 @@ from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 from core import auth, content, installer, java as javamod, launch as launcher, live
-from core import link, modpack, mslogin, updater
+from core import link, modpack, mslogin, skin, updater
+from core import net
 from core.config import CACHE_DIR, LOG_DIR, ROOT, config
 from core.manifest import fetch_manifest, get_version_json, list_local_versions, list_versions
 from core.paths import DATA_DIR, FROZEN, RES_DIR
@@ -599,6 +600,44 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "account": auth.login_status(),
                                "config_account": config.data.get("account") or {}})
 
+        if path == "/api/skin/image":
+            # 皮肤图同源代理：canvas 画预览需要，顺便解决官方 CDN 直连不稳的问题
+            src = (qs.get("url") or [""])[0].strip()
+            if not src.lower().startswith(("http://", "https://")):
+                return self._error("只代理 http(s) 图片")
+            host = urlparse(src).hostname or ""
+            if host.endswith(("mojang.com", "minecraft.net", "minotar.net",
+                              "crafatar.com", "minecraftservices.com")):
+                try:
+                    data = net.get_bytes(src, timeout=15, retries=1)
+                except Exception as e:  # noqa: BLE001
+                    return self._error(f"取皮肤图失败：{e}")
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "max-age=300")
+                self.end_headers()
+                return self.wfile.write(data)
+            return self._error("这个域名不在皮肤图白名单里")
+
+        if path == "/api/skin/uuid-avatar":
+            # 按 UUID 取皮肤图（主页玩家卡头像用）：官方 → crafatar 兜底
+            uid = (qs.get("uuid") or [""])[0].strip().replace("-", "")
+            if not re.fullmatch(r"[0-9a-fA-F]{32}", uid):
+                return self._error("uuid 格式不对")
+            tex = skin.textures(uid)
+            src = tex.get("skin_url") or f"https://crafatar.com/skins/{uid}"
+            try:
+                data = net.get_bytes(src, timeout=15, retries=1)
+            except Exception as e:  # noqa: BLE001
+                return self._error(f"取皮肤失败：{e}")
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "max-age=600")
+            self.end_headers()
+            return self.wfile.write(data)
+
         if path == "/api/logs":
             files = sorted(LOG_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime,
                            reverse=True)[:30]
@@ -930,6 +969,41 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/live/check":
             fresh = live.poll(announce=True)
             return self._json({"ok": True, "new": fresh, "live": live.status()})
+
+        # ---------- 皮肤 ----------
+        if path == "/api/skin/preview":
+            name = (body.get("name") or "").strip()
+            try:
+                return self._json({"ok": True, "skin": skin.info(name)})
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
+
+        if path == "/api/skin/set":
+            url = (body.get("url") or "").strip()
+            variant = (body.get("variant") or "classic").strip()
+            try:
+                skin.set_skin_by_url(url, variant)
+                return self._json({"ok": True, "message": "换肤成功，进游戏换个视角就能看到"})
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
+
+        if path == "/api/skin/upload":
+            variant = parse_qs(urlparse(self.path).query).get(
+                "variant", ["classic"])[0].strip()
+            try:
+                total = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                total = 0
+            if total <= 0:
+                return self._error("没有收到文件内容")
+            if total > 4 * 1024 * 1024:
+                return self._error("皮肤图片不该超过 4 MB")
+            png = self.rfile.read(total)
+            try:
+                skin.set_skin_file(png, variant)
+                return self._json({"ok": True, "message": "换肤成功，进游戏换个视角就能看到"})
+            except Exception as e:  # noqa: BLE001
+                return self._error(str(e))
 
         if path == "/api/launch":
             vid = (body.get("id") or "").strip()
