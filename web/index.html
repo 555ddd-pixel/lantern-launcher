@@ -98,28 +98,26 @@
     <!-- 主页 -->
     <section class="page active" id="page-home">
       <div class="launch-panel">
-        <div class="lp-version">
-          <span class="lp-label">当前选择的版本</span>
+        <div class="lp-left">
+          <div class="lp-eyebrow">当前选择的版本 <span class="lp-tag" id="heroTag" hidden>正式版</span></div>
           <strong class="lp-name" id="heroTitle">—</strong>
           <span class="lp-sub muted" id="heroSub">正在读取已安装版本…</span>
+          <div class="lp-player" id="lpPlayer">
+            <canvas class="lp-face" id="lpFace" width="64" height="64" title="当前玩家的皮肤头像"></canvas>
+            <div class="lp-player-meta">
+              <strong id="lpPlayerName">Steve</strong>
+              <span class="muted small" id="lpPlayerType">离线登录</span>
+              <button class="link" id="lpSkinLink">查看 / 更换皮肤 →</button>
+            </div>
+          </div>
         </div>
-        <div class="lp-launch">
+        <div class="lp-right">
           <span class="lp-state" id="heroKicker"></span>
           <button class="btn btn-primary btn-lg" id="heroLaunch">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             <span>启动游戏</span>
           </button>
-        </div>
-        <div class="lp-player" id="lpPlayer">
-          <canvas class="lp-face" id="lpFace" width="64" height="64" title="当前玩家的皮肤头像"></canvas>
-          <div class="lp-player-meta">
-            <strong id="lpPlayerName">Steve</strong>
-            <span class="muted small" id="lpPlayerType">离线登录</span>
-            <button class="link" id="lpSkinLink">查看 / 更换皮肤</button>
-          </div>
-        </div>
-        <div class="lp-extra">
-          <button class="btn btn-ghost btn-mini" id="checkLiveBtn">检查新版</button>
+          <button class="btn btn-ghost btn-mini" id="checkLiveBtn">检查 Mojang 新版</button>
           <span class="muted small" id="liveCheckText"></span>
         </div>
       </div>

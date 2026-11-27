@@ -162,8 +162,10 @@ function renderHome() {
   const latest = state.latest.release;
   $("#statMemory").textContent = (state.config.memory_mb || 2048) + " MB";
 
+  const tag = $("#heroTag");
   const quick = $("#quickList");
   if (!installed.length) {
+    tag.hidden = true;
     quick.innerHTML = `<div class="empty">还没有安装任何版本，去「下载」页面挑一个吧。</div>`;
     $("#heroTitle").textContent = "尚未安装版本";
     $("#heroSub").textContent = latest
@@ -176,6 +178,8 @@ function renderHome() {
   }
   $("#heroLaunch").disabled = false;
   const first = installed[0];
+  tag.hidden = false;
+  tag.textContent = first.loader || (/-/.test(first.id) ? "快照" : "正式版");
   $("#heroTitle").textContent = first.id;
   $("#heroKicker").textContent = state.gameRunning ? "运行中" : "";
   $("#heroSub").textContent = `${first.loader || "原版"} · Java ${first.java} · ${fmtBytes(first.size)}`;

@@ -106,34 +106,38 @@ p { margin: 0; }
 .small { font-size: 12px; }
 .mono { font-family: var(--mono); font-size: 12px; }
 
-/* ---------------- 启动面板（主页） ---------------- */
+/* ---------------- 启动面板（主页 · 双区卡） ---------------- */
 .launch-panel {
-  display: flex; align-items: center; gap: 22px;
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 20px 24px; margin-bottom: 18px;
+  display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: var(--radius); padding: 20px 22px; margin-bottom: 18px;
   box-shadow: var(--shadow);
 }
-.lp-version { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
-.lp-label { font-size: 11.5px; color: var(--muted); letter-spacing: .04em; }
-.lp-name { font-size: 26px; font-weight: 700; letter-spacing: -.01em; font-family: var(--mono); }
-.lp-sub { font-size: 12.5px; }
-.lp-launch { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
-.lp-state { font-size: 12px; color: var(--accent-2); font-weight: 600; min-height: 16px; }
-.lp-launch .btn-lg { padding: 12px 30px; }
+.lp-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.lp-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.lp-tag { font-size: 10.5px; color: var(--accent-2); background: var(--accent-soft); border-radius: 4px; padding: 1px 6px; }
+.lp-tag[hidden] { display: none; }
+.lp-name { font-size: 30px; font-weight: 700; letter-spacing: -.01em; font-family: var(--mono); margin: 2px 0 1px; }
+.lp-sub { font-size: 12.5px; color: var(--ink-2); }
 .lp-player {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px; border-left: 1px solid var(--line); padding-left: 22px;
+  display: flex; align-items: center; gap: 9px;
+  margin-top: 14px; padding-top: 13px; border-top: 1px dashed var(--line);
 }
 .lp-face {
-  width: 40px; height: 40px; border-radius: var(--radius-sm);
-  image-rendering: pixelated; background: #efece7;
+  width: 38px; height: 38px; border-radius: var(--radius-sm);
+  image-rendering: pixelated; background: #efece7; border: 1px solid var(--line);
 }
 .lp-face[hidden] { display: none; }
 .lp-player-meta { display: flex; flex-direction: column; gap: 1px; }
 .lp-player-meta strong { font-size: 13px; }
 .lp-player-meta .link { font-size: 11.5px; padding: 1px 0; }
-.lp-extra { display: flex; flex-direction: column; gap: 3px; align-items: flex-end; min-width: 130px; }
-.lp-extra .muted { text-align: right; font-size: 11px; }
+.lp-right { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 180px; }
+.lp-state { font-size: 12px; color: var(--ok); font-weight: 600; display: flex; align-items: center; gap: 6px; justify-content: center; min-height: 16px; }
+.lp-state:not(:empty)::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.lp-right .btn-lg { padding: 14px 26px; font-size: 15px; }
+.lp-right .btn-mini { font-size: 12px; padding: 6px; }
+.lp-right .muted { font-size: 11px; text-align: center; }
+.lp-right .muted:empty { display: none; }
 
 /* ---------------- 按钮 ---------------- */
 .btn {
@@ -618,8 +622,8 @@ body.in-window ::selection { background: rgba(179, 99, 23, .18); }
 
 @media (max-width: 1080px) {
   .skin-grid { grid-template-columns: 1fr; }
-  .launch-panel { flex-wrap: wrap; }
-  .lp-player { border-left: 0; padding-left: 0; }
+  .launch-panel { grid-template-columns: 1fr; }
+  .lp-right { min-width: 0; }
 }
 
 
