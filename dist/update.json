@@ -1,13 +1,13 @@
 {
-  "version": "1.9.1",
+  "version": "1.9.2",
   "published": "2026-11-27",
-  "notes": "启动面板改为双区卡片：左侧版本信息与玩家皮肤卡，右侧启动按钮与检查新版，版本号旁标注正式版/快照/加载器类型；布局更清晰。",
+  "notes": "皮肤页的「官方皮肤站」改成客户端内打开的应用内皮肤站：皮肤库画廊、玩家搜索、大图预览、一键换肤，全程不跳浏览器；皮肤图代理改为优先直连，修复部分系统代理下头像加载超时的问题。",
   "min_version": "1.0.0",
   "files": {
     "windows-x64": {
-      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.9.1/LanternLauncher.exe",
-      "size": 28059289,
-      "sha1": "6adff81cc5d839c5b34657547b49c3a7e2891d2b"
+      "url": "https://github.com/555ddd-pixel/lantern-launcher/releases/download/v1.9.2/LanternLauncher.exe",
+      "size": 28060642,
+      "sha1": "69ccc32fd2ef19d03c2bf437a6dcf58abd92ed1d"
     }
   }
 }

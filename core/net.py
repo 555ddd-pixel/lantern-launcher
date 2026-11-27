@@ -132,7 +132,8 @@ def resolve_mirror(mirror: str) -> str:
 
 
 def _open(url: str, timeout: float = 30.0, headers: Optional[dict] = None,
-          retries: int = 3, use_proxy: bool = False):
+          retries: int = 3, use_proxy: bool = False, direct: bool = False):
+    """direct=True 强制不用任何代理（含系统环境变量里的），用于本来就直连可达的源。"""
     last = None
     for attempt in range(retries):
         try:
@@ -140,6 +141,8 @@ def _open(url: str, timeout: float = 30.0, headers: Optional[dict] = None,
             if headers:
                 h.update(headers)
             req = urllib.request.Request(url, headers=h)
+            if direct:
+                return _no_proxy_opener.open(req, timeout=timeout)
             opener = _use_proxy_opener() if use_proxy else None
             if opener is not None:
                 return opener.open(req, timeout=timeout)
@@ -155,8 +158,8 @@ def _open(url: str, timeout: float = 30.0, headers: Optional[dict] = None,
 
 
 def get_bytes(url: str, timeout: float = 30.0, retries: int = 3,
-              use_proxy: bool = False) -> bytes:
-    with _open(url, timeout=timeout, retries=retries, use_proxy=use_proxy) as r:
+              use_proxy: bool = False, direct: bool = False) -> bytes:
+    with _open(url, timeout=timeout, retries=retries, use_proxy=use_proxy, direct=direct) as r:
         return r.read()
 
 

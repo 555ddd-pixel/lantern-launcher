@@ -83,13 +83,18 @@ function esc(s) {
 function go(page) {
   if (!document.getElementById("page-" + page)) page = "home";
   if (location.hash !== "#" + page) history.replaceState(null, "", "#" + page);
-  $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
+  const navPage = page === "skinstation" ? "skin" : page;   // 皮肤站属于皮肤导航项
+  $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === navPage));
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + page));
   $(".main").scrollTop = 0;
   document.title = (PAGE_TITLES[page] ? PAGE_TITLES[page] + " · " : "") + APP_TITLE;
   if (page === "logs") refreshConsole(true);
   if (page === "settings") loadJava();
   if (page === "skin") fillSkinHint();
+  if (page === "skinstation" && !ssState.galleryLoaded) {
+    ssState.galleryLoaded = true;
+    renderSkinGallery(SS_PICKS);
+  }
   if (page === "modpack") ensurePacks();
   if (page === "mods") loadMods();
   if (page === "link") loadLink();
@@ -1545,7 +1550,7 @@ window.addEventListener("keydown", (e) => {
 
 const PAGE_TITLES = {
   home: "主页", download: "下载", modpack: "整合包", mods: "模组", link: "联机",
-  skin: "皮肤", versions: "版本", settings: "设置", logs: "日志",
+  skin: "皮肤", skinstation: "皮肤站", versions: "版本", settings: "设置", logs: "日志",
 };
 
 
@@ -2121,14 +2126,119 @@ $("#skinUrlBtn").addEventListener("click", () => {
   }));
 });
 
-$("#skinOpenSkinSite").addEventListener("click", () =>
-  window.open("https://www.minecraft.net/zh-hans/profile", "_blank"));
+$("#skinOpenSkinSite").addEventListener("click", () => go("skinstation"));
+$("#ssBack").addEventListener("click", () => go("skin"));
 
 $("#lpSkinLink").addEventListener("click", () => {
   const acc = state.config.account || {};
   $("#skinQuery").value = acc.name || state.config.player_name || "Notch";
   go("skin");
   lookupSkin();
+});
+
+/* ---------------- 皮肤站（应用内，不跳浏览器） ----------------
+   皮肤库用一批经典正版角色名，头像走 /api/skin/image 同源代理
+   （白名单含 minotar / crafatar，国内可用），点预览再一键换肤。 */
+const SS_PICKS = [
+  "Notch", "jeb_", "Dinnerbone", "Grumm", "Searge", "LadyAgnes",
+  "Technoblade", "Dream", "Herobrine", "Alex", "Steve",
+];
+const ssState = { name: "", variant: "classic", skin: null };
+
+function ssAvatar(name) {
+  return `/api/skin/image?url=${encodeURIComponent("https://minotar.net/avatar/" + encodeURIComponent(name) + "/64")}`;
+}
+
+function renderSkinGallery(names) {
+  const box = $("#ssGallery");
+  box.innerHTML = names.map((n) => `
+    <button class="ss-card" data-ss="${esc(n)}" title="${esc(n)}">
+      <img src="${ssAvatar(n)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <span>${esc(n)}</span>
+    </button>`).join("");
+  $("#ssGalleryCount").textContent = `（${names.length} 件）`;
+  box.querySelectorAll(".ss-card").forEach((card) => {
+    card.addEventListener("click", () => ssPreview(card.dataset.ss));
+  });
+}
+
+async function ssPreview(name) {
+  const box = $("#ssInfo");
+  $$(".ss-card").forEach((c) => c.classList.toggle("active", c.dataset.ss === name));
+  box.innerHTML = '<span class="muted">正在查询…</span>';
+  try {
+    const { skin } = await api("/api/skin/preview", {
+      method: "POST", body: JSON.stringify({ name }),
+    });
+    ssState.name = name;
+    ssState.skin = skin;
+    const slim = (skin.model || "").toLowerCase() === "slim";
+    ssState.variant = slim ? "slim" : "classic";
+    $$("#ssVariantRow .tab").forEach((b) =>
+      b.classList.toggle("active", b.dataset.variant === ssState.variant));
+    const src = skin.skin_url
+      ? skinImgUrl(skin.skin_url)
+      : skinImgUrl(`https://crafatar.com/skins/${(skin.uuid || "").replace(/-/g, "")}`);
+    drawSkinCanvas($("#ssFace"), src, "face");
+    drawSkinCanvas($("#ssBody"), src, "body", slim);
+    $("#ssStage").hidden = false;
+    $("#ssEmpty").hidden = true;
+    $("#ssStatus").innerHTML = "";
+    box.innerHTML = `
+      <strong>${esc(skin.name || name)}</strong>
+      <span class="muted">来源：${esc(skin.source || "官方接口")}</span>
+      ${skin.uuid ? `<span class="mono muted">${esc(skin.uuid)}</span>` : ""}
+      ${skin.note ? `<span class="muted">${esc(skin.note)}</span>` : ""}
+      ${skin.live ? "" : '<span class="muted">（镜像预览，换肤以官方数据为准）</span>'}`;
+  } catch (e) {
+    $("#ssStage").hidden = true;
+    $("#ssEmpty").hidden = false;
+    box.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
+}
+
+async function ssSearch() {
+  const name = $("#ssQuery").value.trim();
+  if (!name) { toast("先填一个玩家名", "err"); return; }
+  await ssPreview(name);
+}
+
+$("#ssSearchBtn").addEventListener("click", ssSearch);
+$("#ssQuery").addEventListener("keydown", (e) => { if (e.key === "Enter") ssSearch(); });
+$$(".ss-quick [data-ss-name]").forEach((b) =>
+  b.addEventListener("click", () => { $("#ssQuery").value = b.dataset.ssName; ssPreview(b.dataset.ssName); }));
+$$("#ssVariantRow .tab").forEach((b) => b.addEventListener("click", () => {
+  ssState.variant = b.dataset.variant;
+  $$("#ssVariantRow .tab").forEach((x) => x.classList.toggle("active", x === b));
+  if (ssState.skin) {
+    const src = ssState.skin.skin_url
+      ? skinImgUrl(ssState.skin.skin_url)
+      : skinImgUrl(`https://crafatar.com/skins/${(ssState.skin.uuid || "").replace(/-/g, "")}`);
+    drawSkinCanvas($("#ssBody"), src, "body", ssState.variant === "slim");
+  }
+}));
+
+$("#ssApplyBtn").addEventListener("click", async () => {
+  if (!ssState.skin || !ssState.skin.skin_url) {
+    $("#ssStatus").innerHTML = '<span class="err">这个皮肤没有可用的图片地址，换个玩家试试</span>';
+    return;
+  }
+  const btn = $("#ssApplyBtn");
+  btn.disabled = true;
+  $("#ssStatus").innerHTML = '<span class="muted">正在向 Mojang 提交…</span>';
+  try {
+    await api("/api/skin/set", {
+      method: "POST",
+      body: JSON.stringify({ url: ssState.skin.skin_url, variant: ssState.variant }),
+    });
+    $("#ssStatus").innerHTML = '<span class="ok">换肤成功，几分钟内同步到游戏。</span>';
+    toast("皮肤已更换", "ok");
+    renderLaunchPlayer();
+  } catch (e) {
+    $("#ssStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 /* ---------------- 一键检查 Mojang 新版本 ---------------- */

@@ -609,7 +609,12 @@ class Handler(BaseHTTPRequestHandler):
             if host.endswith(("mojang.com", "minecraft.net", "minotar.net",
                               "crafatar.com", "minecraftservices.com")):
                 try:
-                    data = net.get_bytes(src, timeout=15, retries=1)
+                    # 这些镜像本来就能直连，优先绕过系统代理（有的系统代理会让
+                    # minotar/crafatar 的 TLS 握手超时）；直连不通再退回默认线路。
+                    try:
+                        data = net.get_bytes(src, timeout=12, retries=1, direct=True)
+                    except Exception:  # noqa: BLE001
+                        data = net.get_bytes(src, timeout=15, retries=1)
                 except Exception as e:  # noqa: BLE001
                     return self._error(f"取皮肤图失败：{e}")
                 self.send_response(200)

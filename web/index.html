@@ -379,7 +379,58 @@
             <button class="btn btn-ghost" id="skinUrlBtn">用链接换</button>
           </div>
           <div class="skin-status small" id="skinSetStatus"></div>
-          <div class="btn-row"><button class="btn btn-ghost btn-mini" id="skinOpenSkinSite">官方皮肤站（minecraft.net）</button></div>
+          <div class="btn-row"><button class="btn btn-ghost btn-mini" id="skinOpenSkinSite">打开皮肤站 →</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 皮肤站（皮肤页内一键打开） -->
+    <section class="page" id="page-skinstation">
+      <div class="page-head">
+        <div>
+          <h1>皮肤站</h1>
+          <p class="muted">挑一件喜欢的皮肤，看预览，然后一键换上。图片都走启动器内部网络，不会打开浏览器。</p>
+        </div>
+        <button class="btn btn-ghost" id="ssBack">← 返回皮肤</button>
+      </div>
+
+      <div class="panel ss-searchbar">
+        <div class="skin-query">
+          <input id="ssQuery" type="text" spellcheck="false" placeholder="输入正版玩家名，例如 Notch">
+          <button class="btn btn-primary" id="ssSearchBtn">搜索皮肤</button>
+        </div>
+        <div class="ss-quick small muted">
+          <span>快速查看：</span>
+          <button class="link" data-ss-name="Notch">Notch</button>
+          <button class="link" data-ss-name="jeb_">jeb_</button>
+          <button class="link" data-ss-name="Dinnerbone">Dinnerbone</button>
+          <button class="link" data-ss-name="Grumm">Grumm</button>
+          <button class="link" data-ss-name="Searge">Searge</button>
+        </div>
+      </div>
+
+      <div class="ss-layout">
+        <div class="panel">
+          <h2>皮肤库 <span class="muted small" id="ssGalleryCount"></span></h2>
+          <div class="ss-gallery" id="ssGallery"></div>
+        </div>
+
+        <div class="panel">
+          <h2>预览 / 换肤</h2>
+          <div id="ssEmpty" class="empty">点左边的皮肤，或在上方搜索一个玩家名。</div>
+          <div id="ssStage" hidden>
+            <div class="skin-stage">
+              <div class="skin-figure"><canvas id="ssFace" width="128" height="128"></canvas><span class="small muted">头像</span></div>
+              <div class="skin-figure"><canvas id="ssBody" width="160" height="320"></canvas><span class="small muted">正面</span></div>
+              <div class="ss-info small" id="ssInfo"></div>
+            </div>
+            <div class="skin-variant" id="ssVariantRow">
+              <button class="tab active" data-variant="classic">宽臂（Steve 型）</button>
+              <button class="tab" data-variant="slim">细臂（Alex 型）</button>
+            </div>
+            <button class="btn btn-primary" id="ssApplyBtn">换成这个皮肤</button>
+            <div class="skin-status small" id="ssStatus"></div>
+          </div>
         </div>
       </div>
     </section>

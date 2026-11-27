@@ -620,7 +620,37 @@ body.in-window ::selection { background: rgba(179, 99, 23, .18); }
 .skin-status .err { color: var(--err); }
 .skin-status .muted { color: var(--muted); }
 
+/* ---------------- 皮肤站 ---------------- */
+.ss-searchbar { margin-bottom: 12px; padding: 14px 16px; }
+.ss-searchbar .skin-query { margin-bottom: 10px; }
+.ss-quick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ss-quick .link { font-size: 12px; }
+.ss-layout { display: grid; grid-template-columns: 1.1fr 1fr; gap: 12px; align-items: start; }
+.ss-layout h2 { margin-bottom: 12px; }
+.ss-gallery {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 10px; max-height: 520px; overflow-y: auto;
+}
+.ss-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 6px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: #fff; cursor: pointer; transition: border-color .15s ease, background .15s ease;
+}
+.ss-card:hover { border-color: #d0c3ac; background: var(--panel-2); }
+.ss-card.active { border-color: var(--accent); background: var(--accent-soft); }
+.ss-card canvas, .ss-card img {
+  width: 56px; height: 56px; image-rendering: pixelated;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: repeating-conic-gradient(#f1efeb 0% 25%, #fff 0% 50%) 0 / 12px 12px;
+}
+.ss-card span { font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-card .ss-badge { font-size: 10px; color: var(--muted); }
+.ss-info { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 5px; line-height: 1.5; }
+.ss-info .err { color: var(--err); }
+#ssApplyBtn { margin-top: 14px; }
+
 @media (max-width: 1080px) {
+  .ss-layout { grid-template-columns: 1fr; }
   .skin-grid { grid-template-columns: 1fr; }
   .launch-panel { grid-template-columns: 1fr; }
   .lp-right { min-width: 0; }
